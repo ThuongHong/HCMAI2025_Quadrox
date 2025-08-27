@@ -14,6 +14,9 @@ $urls = @(
 "https://aic-data.ledo.io.vn/Keyframes_L29.zip"
 "https://aic-data.ledo.io.vn/Keyframes_L30.zip"
 "https://aic-data.ledo.io.vn/clip-features-32-aic25-b1.zip"
+"https://aic-data.ledo.io.vn/objects-aic25-b1.zip"
+"https://aic-data.ledo.io.vn/map-keyframes-aic25-b1.zip"
+"https://aic-data.ledo.io.vn/media-info-aic25-b1.zip"
 )
 
 foreach ($url in $urls) {
