@@ -34,7 +34,7 @@ class QueryController:
         self,
         model: KeyframeServiceReponse
     ) -> tuple[str, float]:
-        return os.path.join(self.data_folder, f"L{model.group_num:02d}/V{model.video_num:03d}/{model.keyframe_num:08d}.webp"), model.confidence_score
+        return os.path.join(self.data_folder, f"L{model.group_num:02d}/L{model.group_num:02d}_V{model.video_num:03d}/{model.keyframe_num:03d}.jpg"), model.confidence_score
     
         
     async def search_text(

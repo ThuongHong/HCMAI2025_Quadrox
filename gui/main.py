@@ -12,6 +12,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Functions
+@st.dialog("Fullscreen Image Viewer", width="large")
+def show_fullscreen_image(image_path, caption):
+    """Display image in fullscreen dialog"""
+    try:
+        st.image(image_path, use_container_width=True, caption=caption)
+    except Exception as e:
+        st.error(f"Could not load image: {str(e)}")
+        st.write(f"**Path:** {image_path}")
+
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -265,23 +275,34 @@ if st.session_state.search_results:
             col_img, col_info = st.columns([1, 3])
             
             with col_img:
-                # Try to display image if path is accessible
                 try:
+                    # Display image with click to fullscreen
+                    if st.button(f"📷", key=f"img_{i}", help="Click to view fullscreen"):
+                        show_fullscreen_image(result['path'], f"Keyframe {i+1} - Score: {result['score']:.3f}")
+                    
+                    # Show thumbnail image
                     st.image(result['path'], width=200, caption=f"Keyframe {i+1}")
-                except:
+                    
+                except Exception as e:
                     st.markdown(f"""
                     <div style="
                         background: #f0f0f0; 
                         height: 150px; 
+                        width: 200px;
                         border-radius: 10px; 
                         display: flex; 
                         align-items: center; 
                         justify-content: center;
                         border: 2px dashed #ccc;
+                        margin: 0 auto;
                     ">
                         <div style="text-align: center; color: #666;">
-                            🖼️<br>Image Preview<br>Not Available
+                            🖼️<br>Image Preview<br>Not Available<br>
+                            <small style="font-size: 10px;">Path: {result['path']}</small>
                         </div>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
+                        Keyframe {i+1}
                     </div>
                     """, unsafe_allow_html=True)
             
@@ -293,9 +314,6 @@ if st.session_state.search_results:
                         <span class="score-badge">Score: {result['score']:.3f}</span>
                     </div>
                     <p style="margin: 0.5rem 0; color: #666;"><strong>Path:</strong> {result['path']}</p>
-                    <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 5px; font-family: monospace; font-size: 0.9rem;">
-                        {result['path'].split('/')[-1]}
-                    </div>
                 </div>
                 """, unsafe_allow_html=True)
         

@@ -1,7 +1,10 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from dotenv import load_dotenv
+from pathlib import Path
 load_dotenv()
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class MongoDBSettings(BaseSettings):
@@ -33,9 +36,9 @@ class AppSettings(BaseSettings):
     PRETRAINED_NAME: str = "openai"
 
     # Resources
-    DATA_FOLDER: str  = "/resources/"
-    ID2INDEX_PATH: str = "resources/keyframes/id2index.json"
-    # FRAME2OBJECT: str = '/media/tinhanhnguyen/Data3/Projects/HCMAI2025_Baseline/app/data/detections.json'
-    # ASR_PATH: str = '/media/tinhanhnguyen/Data3/Projects/HCMAI2025_Baseline/app/data/asr_proc.json'
+    DATA_FOLDER: str  = str(REPO_ROOT / 'resources' / 'keyframes')
+    ID2INDEX_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'id2index.json')
+    # FRAME2OBJECT: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'detections.json')
+    # ASR_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'asr_proc.json')
 
 
