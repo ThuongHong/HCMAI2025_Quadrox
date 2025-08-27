@@ -12,7 +12,7 @@ uv add aiofiles beanie dotenv fastapi[standard] httpx ipykernel motor nicegui nu
 
 2. Activate .venv
 ```bash
-source/SCripts/activate
+.venv/Scripts/activate
 ```
 
 3. Run docker compose
