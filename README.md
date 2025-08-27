@@ -16,23 +16,26 @@ A FastAPI-based AI application powered by Milvus for vector search, MongoDB for 
 git clone https://github.com/ThuongHong/HCMAI2025_Quadrox.git
 ```
 
-2. uv sync
+### 🔧 Local Development
+
+1. Install uv and setup env
 ```bash
 uv sync
 ```
 
-3. Activate .venv
+2. Activate .venv
 ```bash
 .venv/Scripts/activate
 ```
-4. Run docker compose
+
+3. Run docker compose
 ```bash
 docker compose up -d
 ```
 
 4. Data Migration 
 ```bash
-python migration/embedding_migration.py --file_path <emnedding.pt file>
+python migration/npy_embedding_migration.py --folder_path <folder_path>
 python migration/keyframe_migration.py --file_path <id2index.json file path>
 ```
 
