@@ -7,14 +7,13 @@ class ModelService:
         self,
         model ,
         preprocess ,
-        tokenizer ,
-        device: str='cuda'
+        tokenizer
         ):
         self.model = model
-        self.model = model.to(device)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = model.to(self.device)
         self.preprocess = preprocess
         self.tokenizer = tokenizer
-        self.device = device
         self.model.eval()
     
     def embedding(self, query_text: str) -> np.ndarray:

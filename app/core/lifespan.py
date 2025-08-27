@@ -37,10 +37,13 @@ async def lifespan(app: FastAPI):
         milvus_settings = KeyFrameIndexMilvusSetting()
         appsetting = AppSettings()
         global mongo_client
-        mongo_connection_string = (
-            f"mongodb://{mongo_settings.MONGO_USER}:{mongo_settings.MONGO_PASSWORD}"
-            f"@{mongo_settings.MONGO_HOST}:{mongo_settings.MONGO_PORT}"
-        )
+        if mongo_settings.MONGO_URI:
+            mongo_connection_string = mongo_settings.MONGO_URI
+        else:
+            mongo_connection_string = (
+                f"mongodb://{mongo_settings.MONGO_USER}:{mongo_settings.MONGO_PASSWORD}"
+                f"@{mongo_settings.MONGO_HOST}:{mongo_settings.MONGO_PORT}/?authSource=admin"
+            )
         
         mongo_client = AsyncIOMotorClient(mongo_connection_string)
         
@@ -68,6 +71,8 @@ async def lifespan(app: FastAPI):
             milvus_password="",  
             milvus_search_params=milvus_search_params,
             model_name=appsetting.MODEL_NAME,
+            use_pretrained=appsetting.USE_PRETRAINED,
+            pretrained_name=appsetting.PRETRAINED_NAME,
             mongo_collection=Keyframe
         )
         logger.info("Service factory initialized successfully")

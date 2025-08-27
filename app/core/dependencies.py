@@ -36,7 +36,7 @@ load_dotenv()
 def get_llm() -> LLM:
     return GoogleGenAI(
         'gemini-2.5-flash-lite',
-        api_key=os.getenv('GOOGLE_GENAI_API')
+        api_key=os.getenv('GEMINI_API_KEY')
     )
 
 

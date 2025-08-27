@@ -28,6 +28,8 @@ class ServiceFactory:
         milvus_password: str ,
         milvus_search_params: dict,
         model_name: str ,
+        use_pretrained: bool,
+        pretrained_name: str,
         milvus_db_name: str = "default",
         milvus_alias: str = "default",
         mongo_collection=Keyframe,
@@ -44,7 +46,7 @@ class ServiceFactory:
             alias=milvus_alias
         )
 
-        self._model_service = self._init_model_service(model_name)
+        self._model_service = self._init_model_service(model_name, use_pretrained, pretrained_name)
 
         self._keyframe_query_service = KeyframeQueryService(
             keyframe_mongo_repo=self._mongo_keyframe_repo,
@@ -80,8 +82,11 @@ class ServiceFactory:
 
         return KeyframeVectorRepository(collection=collection, search_params=search_params)
 
-    def _init_model_service(self, model_name: str):
-        model, _, preprocess = open_clip.create_model_and_transforms(model_name)
+    def _init_model_service(self, model_name: str, use_pretrained: bool, pretrained_name: str):
+        if use_pretrained:
+            model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_name, force_quick_gelu=True)
+        else:
+            model, _, preprocess = open_clip.create_model_and_transforms(model_name)
         tokenizer = open_clip.get_tokenizer(model_name)
         return ModelService(model=model, preprocess=preprocess, tokenizer=tokenizer)
 

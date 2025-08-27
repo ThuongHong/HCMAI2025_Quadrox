@@ -22,8 +22,8 @@ docker compose up -d
 
 4. Data Migration 
 ```bash
-python migration/npy_embedding_migration.py --folder_path <folder_path>
-python migration/keyframe_migration.py --file_path <id2index.json file path>
+python migration/npy_embedding_migration.py --folder_path resources/embeddings
+python migration/keyframe_migration.py --file_path resources\keyframes\id2index.json
 ```
 
 5. Run the application
