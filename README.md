@@ -1,13 +1,26 @@
 # HCMAI2025_Baseline
 
+A FastAPI-based AI application powered by Milvus for vector search, MongoDB for metadata storage, and MinIO for object storage.
+
+## 🧑‍💻 Getting Started
+
+### Prerequisites
+- Docker
+- Docker Compose
+- Python 3.10
+- uv
+
+### 🔧 Local Development
+1. Clone the repo and start all services:
+```bash
+git clone https://github.com/ThuongHong/HCMAI2025_Quadrox.git
+```
 
 ### 🔧 Local Development
 
 1. Install uv and setup env
 ```bash
-pip install uv
-uv init --python=3.10
-uv add aiofiles beanie dotenv fastapi[standard] httpx ipykernel motor nicegui numpy open-clip-torch pydantic-settings pymilvus streamlit torch typing-extensions usearch uvicorn
+uv sync
 ```
 
 2. Activate .venv

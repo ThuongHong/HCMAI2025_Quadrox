@@ -206,3 +206,6 @@ data/
 /.cursor
 /resources
 *.txt
+*.npy
+*.jpg
+*.json
