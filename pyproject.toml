@@ -1,7 +1,7 @@
 [project]
-name = "hcmai2025-baseline"
+name = "hcmai2025-quadrox"
 version = "0.1.0"
-description = "Add your description here"
+description = "HCMAIC2025-Quadrox"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
