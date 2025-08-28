@@ -18,15 +18,180 @@ st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
 
 # Functions
 @st.dialog("Fullscreen Image Viewer", width="large")
-def show_fullscreen_image(image_path, caption):
-    """Display image in fullscreen dialog"""
-    try:
-        st.image(image_path, use_container_width=True, caption=caption)
-    except Exception as e:
-        st.error(f"Could not load image: {str(e)}")
-        st.write(f"**Path:** {image_path}")
+def show_fullscreen_image(image_path, caption, metadata=None):
+    """Display image in fullscreen dialog with essential metadata"""
+    col_img, col_meta = st.columns([3, 1])
+    
+    with col_img:
+        try:
+            st.image(image_path, use_container_width=True, caption=caption)
+        except Exception as e:
+            st.error(f"Could not load image: {str(e)}")
+            st.write(f"**Path:** {image_path}")
+    
+    with col_meta:
+        st.markdown("### 📋 Quick Info")
+        
+        if metadata:
+            # Display similarity score prominently
+            if 'score' in metadata:
+                st.metric("🎯 Score", f"{metadata['score']:.3f}")
+            
+            # Essential info only
+            essential_info = []
+            
+            if 'video_id' in metadata and metadata['video_id']:
+                essential_info.append(f"**🎥 Video:** {metadata['video_id']}")
+            
+            if 'group_id' in metadata and metadata['group_id']:
+                essential_info.append(f"**📁 Group:** {metadata['group_id']}")
+            
+            if 'author' in metadata and metadata['author']:
+                author = metadata['author'][:25] + "..." if len(metadata['author']) > 25 else metadata['author']
+                essential_info.append(f"**👤 Author:** {author}")
+            
+            if 'title' in metadata and metadata['title']:
+                title = metadata['title'][:40] + "..." if len(metadata['title']) > 40 else metadata['title']
+                essential_info.append(f"**🎬 Title:** {title}")
+            
+            if 'length' in metadata and metadata['length']:
+                length = metadata['length']
+                minutes = int(length) // 60
+                seconds = int(length) % 60
+                essential_info.append(f"**⏱️ Duration:** {minutes}:{seconds:02d}")
+            
+            # Display essential info
+            if essential_info:
+                for info in essential_info:
+                    st.markdown(info)
+            
+            # Quick action to see full details
+            st.markdown("---")
+            if st.button("📖 View Full Details", use_container_width=True):
+                show_metadata_only(metadata, 0)
+        else:
+            st.info("No metadata available")
 
-# Custom CSS for better styling
+@st.dialog("Metadata Details", width="large") 
+def show_metadata_only(metadata, keyframe_index):
+    """Display detailed metadata with beautiful styling"""
+    if metadata:
+        # Header
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown(f"## 📋 Keyframe #{keyframe_index + 1} Details")
+        
+        # Metrics row
+        if 'score' in metadata or 'video_id' in metadata or 'group_id' in metadata:
+            met_col1, met_col2, met_col3 = st.columns(3)
+            with met_col1:
+                if 'score' in metadata:
+                    st.metric("🎯 Similarity Score", f"{metadata['score']:.3f}")
+            with met_col2:
+                if 'video_id' in metadata:
+                    st.metric("🎥 Video ID", metadata['video_id'])
+            with met_col3:
+                if 'group_id' in metadata:
+                    st.metric("📁 Group ID", metadata['group_id'])
+        
+        st.markdown("---")
+        
+        # Video Information Section
+        if any(key in metadata and metadata[key] for key in ['author', 'title', 'description']):
+            st.markdown("### 🎬 Video Information")
+            
+            if 'author' in metadata and metadata['author']:
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">👤 Author</div>
+                    <div class="info-value">{metadata['author']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            if 'title' in metadata and metadata['title']:
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">🎬 Title</div>
+                    <div class="info-value">{metadata['title']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            if 'description' in metadata and metadata['description']:
+                description = metadata['description']
+                if len(description) > 300:
+                    description = description[:300] + "..."
+                st.markdown(f"""
+                <div class="info-card">
+                    <div class="info-label">📝 Description</div>
+                    <div class="info-value">{description}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+        
+        # Technical Details Section
+        if any(key in metadata and metadata[key] for key in ['length', 'publish_date', 'keywords']):
+            st.markdown("### ⚙️ Technical Details")
+            
+            tech_col1, tech_col2 = st.columns(2)
+            
+            with tech_col1:
+                if 'length' in metadata and metadata['length']:
+                    length = metadata['length']
+                    minutes = int(length) // 60
+                    seconds = int(length) % 60
+                    st.markdown(f"""
+                    <div class="info-card">
+                        <div class="info-label">⏱️ Duration</div>
+                        <div class="info-value">{minutes}:{seconds:02d}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                if 'publish_date' in metadata and metadata['publish_date']:
+                    st.markdown(f"""
+                    <div class="info-card">
+                        <div class="info-label">📅 Published</div>
+                        <div class="info-value">{metadata['publish_date']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with tech_col2:
+                if 'keywords' in metadata and metadata['keywords']:
+                    keywords = metadata['keywords']
+                    if isinstance(keywords, list):
+                        keywords_str = ", ".join(keywords[:5])  # Show first 5 keywords
+                        if len(keywords) > 5:
+                            keywords_str += f" (+{len(keywords)-5} more)"
+                        st.markdown(f"""
+                        <div class="info-card">
+                            <div class="info-label">🏷️ Keywords</div>
+                            <div class="info-value">{keywords_str}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # File path
+                if 'path' in metadata:
+                    display_path = metadata['path']
+                    if 'keyframes\\' in display_path:
+                        display_path = display_path.split('keyframes\\')[-1]
+                    elif 'keyframes/' in display_path:
+                        display_path = display_path.split('keyframes/')[-1]
+                    st.markdown(f"""
+                    <div class="info-card">
+                        <div class="info-label">📂 File Path</div>
+                        <div class="info-value"><code>{display_path}</code></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+        
+        # Raw JSON (expandable)
+        with st.expander("🔧 Raw Metadata (JSON)", expanded=False):
+            st.json(metadata)
+    else:
+        st.info("No metadata available.")
+
+# Enhanced CSS for better styling
 st.markdown("""
 <style>
     .main > div {
@@ -39,13 +204,6 @@ st.markdown("""
         border-radius: 15px;
         margin-bottom: 2rem;
         color: white;
-    }
-    
-    .mode-selector {
-        background: rgba(255, 255, 255, 0.1);
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 1rem 0;
     }
     
     .result-card {
@@ -72,6 +230,63 @@ st.markdown("""
         border-radius: 8px;
         margin: 0.5rem 0;
         border-left: 4px solid #007bff;
+    }
+    
+    /* Enhanced info cards for metadata */
+    .info-card {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        border-left: 4px solid #007bff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease;
+    }
+    
+    .info-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .info-label {
+        font-weight: bold;
+        color: #495057;
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .info-value {
+        color: #212529;
+        font-size: 1rem;
+        line-height: 1.4;
+        word-wrap: break-word;
+    }
+    
+    /* Custom button styling */
+    .stButton > button {
+        border-radius: 8px;
+        border: none;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        height: 2.5rem;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    /* Action buttons */
+    div[data-testid="column"] .stButton > button[kind="primary"] {
+        background: linear-gradient(45deg, #007bff, #0056b3);
+        color: white;
+    }
+    
+    div[data-testid="column"] .stButton > button[kind="secondary"] {
+        background: linear-gradient(45deg, #6c757d, #495057);
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -379,9 +594,18 @@ if st.session_state.search_results:
             
             with col_img:
                 try:
-                    # Display image with click to fullscreen
-                    if st.button(f"📷", key=f"img_{i}", help="Click to view fullscreen"):
-                        show_fullscreen_image(result['path'], f"Keyframe {i+1} - Score: {result['score']:.3f}")
+                    # Create button layout with better styling
+                    col_btn1, col_btn2 = st.columns(2)
+                    
+                    with col_btn1:
+                        # Display image with click to fullscreen
+                        if st.button(f"🔍 Zoom", key=f"img_{i}", help="View fullscreen with metadata", type="primary", use_container_width=True):
+                            show_fullscreen_image(result['path'], f"Keyframe {i+1} - Score: {result['score']:.3f}", result)
+                    
+                    with col_btn2:
+                        # View metadata details only
+                        if st.button(f"📋 Detail", key=f"detail_{i}", help="View detailed metadata", type="secondary", use_container_width=True):
+                            show_metadata_only(result, i)
                     
                     # Show thumbnail image
                     st.image(result['path'], width=200, caption=f"Keyframe {i+1}")
@@ -410,45 +634,44 @@ if st.session_state.search_results:
                     """, unsafe_allow_html=True)
             
             with col_info:
-                # Build metadata display
+                # Build enhanced metadata display
                 metadata_html = ""
-                if use_metadata_filter:
-                    metadata_parts = []
-                    
-                    # Check if result has metadata attributes
-                    if hasattr(result, 'author') or 'author' in result:
-                        author = getattr(result, 'author', result.get('author', ''))
-                        if author:
-                            metadata_parts.append(f"<strong>Author:</strong> {author}")
-                    
-                    if hasattr(result, 'title') or 'title' in result:
-                        title = getattr(result, 'title', result.get('title', ''))
-                        if title:
-                            title_short = title[:80] + "..." if len(title) > 80 else title
-                            metadata_parts.append(f"<strong>Title:</strong> {title_short}")
-                    
-                    if hasattr(result, 'length') or 'length' in result:
-                        length = getattr(result, 'length', result.get('length', 0))
-                        if length:
-                            minutes = int(length) // 60
-                            seconds = int(length) % 60
-                            metadata_parts.append(f"<strong>Length:</strong> {minutes}:{seconds:02d}")
-                    
-                    if hasattr(result, 'keywords') or 'keywords' in result:
-                        keywords = getattr(result, 'keywords', result.get('keywords', []))
-                        if keywords and isinstance(keywords, list):
-                            keywords_str = ", ".join(keywords[:3])  # Show first 3 keywords
-                            if len(keywords) > 3:
-                                keywords_str += f" (+{len(keywords)-3} more)"
-                            metadata_parts.append(f"<strong>Keywords:</strong> {keywords_str}")
-                    
-                    if hasattr(result, 'publish_date') or 'publish_date' in result:
-                        publish_date = getattr(result, 'publish_date', result.get('publish_date', ''))
-                        if publish_date:
-                            metadata_parts.append(f"<strong>Published:</strong> {publish_date}")
-                    
-                    if metadata_parts:
-                        metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
+                metadata_parts = []
+                
+                # Always show basic info
+                if 'video_id' in result:
+                    metadata_parts.append(f"<strong>🎥 Video ID:</strong> {result['video_id']}")
+                
+                if 'group_id' in result:
+                    metadata_parts.append(f"<strong>📁 Group ID:</strong> {result['group_id']}")
+                
+                # Check if result has extended metadata attributes
+                if 'author' in result and result['author']:
+                    metadata_parts.append(f"<strong>👤 Author:</strong> {result['author']}")
+                
+                if 'title' in result and result['title']:
+                    title_short = result['title'][:60] + "..." if len(result['title']) > 60 else result['title']
+                    metadata_parts.append(f"<strong>🎬 Title:</strong> {title_short}")
+                
+                if 'length' in result and result['length']:
+                    length = result['length']
+                    minutes = int(length) // 60
+                    seconds = int(length) % 60
+                    metadata_parts.append(f"<strong>⏱️ Length:</strong> {minutes}:{seconds:02d}")
+                
+                if 'keywords' in result and result['keywords']:
+                    keywords = result['keywords']
+                    if isinstance(keywords, list):
+                        keywords_str = ", ".join(keywords[:3])  # Show first 3 keywords
+                        if len(keywords) > 3:
+                            keywords_str += f" (+{len(keywords)-3} more)"
+                        metadata_parts.append(f"<strong>🏷️ Keywords:</strong> {keywords_str}")
+                
+                if 'publish_date' in result and result['publish_date']:
+                    metadata_parts.append(f"<strong>📅 Published:</strong> {result['publish_date']}")
+                
+                if metadata_parts:
+                    metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
                 
                 # Format path for display - show only relative part from keyframes/
                 display_path = result['path']
@@ -465,13 +688,13 @@ if st.session_state.search_results:
                         <span class="score-badge">Score: {result['score']:.3f}</span>
                     </div>
                     {metadata_html}
+                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: #f8f9fa; border-radius: 5px;">
+                        <strong>📂 Path:</strong> <code style="font-size: 0.85rem;">{display_path}</code>
+                    </div>
                 </div>
                 """
                 
                 st.markdown(result_html, unsafe_allow_html=True)
-                
-                # Display path separately to avoid HTML issues
-                st.write(f"**Path:** {display_path}")
         
         st.markdown("<br>", unsafe_allow_html=True)
 

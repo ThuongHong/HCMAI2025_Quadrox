@@ -71,12 +71,10 @@ async def search_keyframes(
     )
     
     logger.info(f"Found {len(results)} results for query: '{request.query}'")
-    display_results = list(
-        map(
-            lambda pair: SingleKeyframeDisplay(path=pair[0], score=pair[1]),
-            map(controller.convert_model_to_path, results)
-        )
-    )
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
     return KeyframeDisplay(results=display_results)
 
     
@@ -133,16 +131,12 @@ async def search_keyframes_exclude_groups(
         list_group_exlude=request.exclude_groups
     )
     
-    logger.info(f"Found {len(results)} results excluding groups {request.exclude_groups}")\
+    logger.info(f"Found {len(results)} results excluding groups {request.exclude_groups}")
     
-    
-
-    display_results = list(
-        map(
-            lambda pair: SingleKeyframeDisplay(path=pair[0], score=pair[1]),
-            map(controller.convert_model_to_path, results)
-        )
-    )
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
     return KeyframeDisplay(results=display_results)
 
 
@@ -210,12 +204,10 @@ async def search_keyframes_selected_groups_videos(
     
     logger.info(f"Found {len(results)} results within selected groups/videos")
 
-    display_results = list(
-        map(
-            lambda pair: SingleKeyframeDisplay(path=pair[0], score=pair[1]),
-            map(controller.convert_model_to_path, results)
-        )
-    )
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
     return KeyframeDisplay(results=display_results)
 
 
@@ -282,11 +274,9 @@ async def search_keyframes_with_metadata_filter(
     
     logger.info(f"Found {len(results)} results with metadata filtering")
 
-    display_results = list(
-        map(
-            lambda pair: SingleKeyframeDisplay(path=pair[0], score=pair[1]),
-            map(controller.convert_model_to_path, results)
-        )
-    )
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
     return KeyframeDisplay(results=display_results)
 

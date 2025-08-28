@@ -36,6 +36,13 @@ class KeyframeRepository(MongoBaseRepository[Keyframe]):
 
         ]
 
+    async def get_keyframe_by_list_of_keys_with_metadata(
+        self, keys: list[int]
+    ):
+        """Get full keyframe objects with metadata"""
+        result = await self.find({"key": {"$in": keys}})
+        return result  # Return full Keyframe objects
+
     async def get_keyframe_by_video_num(
         self, 
         video_num: int,
@@ -154,13 +161,6 @@ class KeyframeRepository(MongoBaseRepository[Keyframe]):
             query = {"$and": and_conditions}
         
         result = await self.find(query)
-        return [
-            KeyframeInterface(
-                key=keyframe.key,
-                video_num=keyframe.video_num,
-                group_num=keyframe.group_num,
-                keyframe_num=keyframe.keyframe_num
-            ) for keyframe in result
-        ]
+        return result  # Return full Keyframe objects with metadata
 
 

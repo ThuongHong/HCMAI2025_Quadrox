@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Optional, List
 
 
 class KeyframeServiceReponse(BaseModel):
@@ -13,6 +14,18 @@ class KeyframeServiceReponse(BaseModel):
 class SingleKeyframeDisplay(BaseModel):
     path: str
     score: float
+    video_id: Optional[int] = None
+    group_id: Optional[int] = None
+    # Video metadata fields
+    author: Optional[str] = None
+    channel_id: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    length: Optional[int] = None
+    publish_date: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    watch_url: Optional[str] = None
 
 class KeyframeDisplay(BaseModel):
     results: list[SingleKeyframeDisplay]

@@ -37,6 +37,32 @@ class QueryController:
         model: KeyframeServiceReponse
     ) -> tuple[str, float]:
         return os.path.join(self.data_folder, f"L{model.group_num:02d}/L{model.group_num:02d}_V{model.video_num:03d}/{model.keyframe_num:03d}.jpg"), model.confidence_score
+
+    def convert_model_to_display(
+        self,
+        keyframe_data: tuple  # (keyframe_model, confidence_score)
+    ):
+        """Convert keyframe model to SingleKeyframeDisplay with full metadata"""
+        keyframe, score = keyframe_data
+        
+        # Build the path
+        path = os.path.join(self.data_folder, f"L{keyframe.group_num:02d}/L{keyframe.group_num:02d}_V{keyframe.video_num:03d}/{keyframe.keyframe_num:03d}.jpg")
+        
+        return {
+            'path': path,
+            'score': score,
+            'video_id': keyframe.video_num,
+            'group_id': keyframe.group_num,
+            'author': keyframe.author,
+            'channel_id': keyframe.channel_id,
+            'title': keyframe.title,
+            'description': keyframe.description,
+            'keywords': keyframe.keywords,
+            'length': keyframe.length,
+            'publish_date': keyframe.publish_date,
+            'thumbnail_url': keyframe.thumbnail_url,
+            'watch_url': keyframe.watch_url
+        }
     
         
     async def search_text(
@@ -46,8 +72,7 @@ class QueryController:
         score_threshold: float
     ):
         embedding = self.model_service.embedding(query).tolist()[0]
-
-        result = await self.keyframe_service.search_by_text(embedding, top_k, score_threshold)
+        result = await self.keyframe_service.search_by_text_with_full_metadata(embedding, top_k, score_threshold)
         return result
 
 
@@ -63,10 +88,8 @@ class QueryController:
             if int(v.split('/')[0]) in list_group_exlude
         ]
 
-        
-        
         embedding = self.model_service.embedding(query).tolist()[0]
-        result = await self.keyframe_service.search_by_text_exclude_ids(embedding, top_k, score_threshold, exclude_ids)
+        result = await self.keyframe_service.search_by_text_exclude_ids_with_metadata(embedding, top_k, score_threshold, exclude_ids)
         return result
 
 
@@ -108,7 +131,7 @@ class QueryController:
 
 
         embedding = self.model_service.embedding(query).tolist()[0]
-        result = await self.keyframe_service.search_by_text_exclude_ids(embedding, top_k, score_threshold, exclude_ids)
+        result = await self.keyframe_service.search_by_text_exclude_ids_with_metadata(embedding, top_k, score_threshold, exclude_ids)
         return result
     
     async def search_text_with_metadata_filter(
@@ -141,7 +164,7 @@ class QueryController:
                 filter_dict["description_contains"] = metadata_filter.description_contains
             # Note: Date filtering would need additional implementation
         
-        result = await self.keyframe_service.search_by_text_with_metadata_filter(
+        result = await self.keyframe_service.search_by_text_with_metadata_filter_full(
             embedding, top_k, score_threshold, filter_dict
         )
         return result
