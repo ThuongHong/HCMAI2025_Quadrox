@@ -48,41 +48,26 @@ st.markdown("""
         background: white;
         padding: 1rem;
         border-radius: 10px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
         margin-bottom: 1rem;
-        border-left: 4px solid #667eea;
     }
     
     .score-badge {
-        background: #28a745;
+        background: linear-gradient(45deg, #4CAF50, #45a049);
         color: white;
-        padding: 0.25rem 0.5rem;
+        padding: 0.3rem 0.8rem;
         border-radius: 15px;
-        font-size: 0.8rem;
+        font-size: 0.9rem;
         font-weight: bold;
     }
     
-    .stButton > button {
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 0.5rem 2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-    }
-    
-    .metric-container {
-        background: rgba(255, 255, 255, 0.9);
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        margin: 0.5rem;
+    .metadata-section {
+        background: #f8f9fa;
+        padding: 0.8rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        border-left: 4px solid #007bff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -129,7 +114,7 @@ with col1:
     with col_param1:
         top_k = st.slider("📊 Max Results", min_value=1, max_value=200, value=10)
     with col_param2:
-        score_threshold = st.slider("🎯 Min Score", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
+        score_threshold = st.slider("🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1)
 
 with col2:
     # Search mode selector
@@ -191,6 +176,113 @@ elif search_mode == "Include Groups & Videos":
         except ValueError:
             st.error("Please enter valid video IDs separated by commas")
 
+# Metadata Filter Section (Independent)
+st.markdown("---")
+st.markdown("### 🏷️ Metadata Filters")
+st.markdown("Apply additional filters based on video metadata")
+
+with st.expander("🔍 Metadata Filters", expanded=False):
+    col_meta1, col_meta2 = st.columns(2)
+    
+    with col_meta1:
+        # Author filter
+        st.markdown("**Authors**")
+        authors_input = st.text_input(
+            "Filter by authors",
+            placeholder="e.g., 60 Giây (matches '60 Giây Official')",
+            help="Enter partial author names separated by commas - uses contains matching",
+            key="authors_filter"
+        )
+        
+        # Keywords filter
+        st.markdown("**Keywords**")
+        keywords_input = st.text_input(
+            "Filter by keywords", 
+            placeholder="e.g., tin tuc, HTV, 60 giay",
+            help="Enter keywords separated by commas - uses contains matching",
+            key="keywords_filter"
+        )
+        
+        # Length filter
+        st.markdown("**Video Length (seconds)**")
+        col_len1, col_len2 = st.columns(2)
+        with col_len1:
+            min_length = st.number_input("Min length", min_value=0, value=0, step=1, key="min_len")
+        with col_len2:
+            max_length = st.number_input("Max length", min_value=0, value=0, step=1, key="max_len")
+    
+    with col_meta2:
+        # Title/Description filter
+        st.markdown("**Text Search in Metadata**")
+        title_contains = st.text_input(
+            "Title contains",
+            placeholder="e.g., 60 Giây, tin tức",
+            help="Case-insensitive contains search in titles",
+            key="title_filter"
+        )
+        
+        description_contains = st.text_input(
+            "Description contains", 
+            placeholder="Search in descriptions",
+            help="Case-insensitive contains search in descriptions",
+            key="desc_filter"
+        )
+        
+        # Date filter
+        st.markdown("**Publication Date**")
+        col_date1, col_date2 = st.columns(2)
+        with col_date1:
+            date_from = st.date_input(
+                "From date",
+                value=None,
+                help="Filter videos published from this date",
+                key="date_from"
+            )
+        with col_date2:
+            date_to = st.date_input(
+                "To date", 
+                value=None,
+                help="Filter videos published until this date",
+                key="date_to"
+            )
+        
+        # Enable/disable metadata filtering
+        st.markdown("**Enable Metadata Filtering**")
+        use_metadata_filter = st.checkbox(
+            "Apply metadata filters to search results",
+            value=False,
+            help="When enabled, search results will be filtered by the metadata criteria above"
+        )
+
+# Parse metadata filters
+metadata_filter = {}
+if use_metadata_filter:
+    if authors_input.strip():
+        metadata_filter["authors"] = [x.strip() for x in authors_input.split(',') if x.strip()]
+    
+    if keywords_input.strip():
+        metadata_filter["keywords"] = [x.strip() for x in keywords_input.split(',') if x.strip()]
+    
+    if min_length > 0:
+        metadata_filter["min_length"] = min_length
+    
+    if max_length > 0:
+        metadata_filter["max_length"] = max_length
+    
+    if title_contains.strip():
+        metadata_filter["title_contains"] = title_contains.strip()
+    
+    if description_contains.strip():
+        metadata_filter["description_contains"] = description_contains.strip()
+    
+    if date_from is not None:
+        # Convert date to DD/MM/YYYY format
+        metadata_filter["date_from"] = date_from.strftime("%d/%m/%Y")
+    
+    if date_to is not None:
+        # Convert date to DD/MM/YYYY format
+        metadata_filter["date_to"] = date_to.strftime("%d/%m/%Y")
+
 # Search button and logic
 if st.button("🚀 Search", use_container_width=True):
     if not query.strip():
@@ -200,6 +292,7 @@ if st.button("🚀 Search", use_container_width=True):
     else:
         with st.spinner("🔍 Searching for keyframes..."):
             try:
+                # Determine endpoint and base payload based on search mode
                 if search_mode == "Default":
                     endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
                     payload = {
@@ -226,6 +319,12 @@ if st.button("🚀 Search", use_container_width=True):
                         "include_groups": include_groups,
                         "include_videos": include_videos
                     }
+                
+                # If metadata filter is enabled, use metadata-filter endpoint regardless of search mode
+                if use_metadata_filter and metadata_filter:
+                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
+                    payload["metadata_filter"] = metadata_filter
+                    st.info(f"🏷️ Applying metadata filters: {list(metadata_filter.keys())}")
                 
 
                 response = requests.post(
@@ -307,12 +406,53 @@ if st.session_state.search_results:
                     """, unsafe_allow_html=True)
             
             with col_info:
+                # Build metadata display
+                metadata_html = ""
+                if use_metadata_filter:
+                    metadata_parts = []
+                    
+                    # Check if result has metadata attributes
+                    if hasattr(result, 'author') or 'author' in result:
+                        author = getattr(result, 'author', result.get('author', ''))
+                        if author:
+                            metadata_parts.append(f"<strong>Author:</strong> {author}")
+                    
+                    if hasattr(result, 'title') or 'title' in result:
+                        title = getattr(result, 'title', result.get('title', ''))
+                        if title:
+                            title_short = title[:80] + "..." if len(title) > 80 else title
+                            metadata_parts.append(f"<strong>Title:</strong> {title_short}")
+                    
+                    if hasattr(result, 'length') or 'length' in result:
+                        length = getattr(result, 'length', result.get('length', 0))
+                        if length:
+                            minutes = int(length) // 60
+                            seconds = int(length) % 60
+                            metadata_parts.append(f"<strong>Length:</strong> {minutes}:{seconds:02d}")
+                    
+                    if hasattr(result, 'keywords') or 'keywords' in result:
+                        keywords = getattr(result, 'keywords', result.get('keywords', []))
+                        if keywords and isinstance(keywords, list):
+                            keywords_str = ", ".join(keywords[:3])  # Show first 3 keywords
+                            if len(keywords) > 3:
+                                keywords_str += f" (+{len(keywords)-3} more)"
+                            metadata_parts.append(f"<strong>Keywords:</strong> {keywords_str}")
+                    
+                    if hasattr(result, 'publish_date') or 'publish_date' in result:
+                        publish_date = getattr(result, 'publish_date', result.get('publish_date', ''))
+                        if publish_date:
+                            metadata_parts.append(f"<strong>Published:</strong> {publish_date}")
+                    
+                    if metadata_parts:
+                        metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
+                
                 st.markdown(f"""
                 <div class="result-card">
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                         <h4 style="margin: 0; color: #333;">Result #{i+1}</h4>
                         <span class="score-badge">Score: {result['score']:.3f}</span>
                     </div>
+                    {metadata_html}
                     <p style="margin: 0.5rem 0; color: #666;"><strong>Path:</strong> {result['path']}</p>
                 </div>
                 """, unsafe_allow_html=True)

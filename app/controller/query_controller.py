@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from typing import Optional, Dict, Any
 
 import os
 import sys
@@ -13,6 +14,7 @@ sys.path.insert(0, ROOT_DIR)
 
 from service import ModelService, KeyframeQueryService
 from schema.response import KeyframeServiceReponse
+from schema.request import MetadataFilter
 
 
 class QueryController:
@@ -108,6 +110,42 @@ class QueryController:
         embedding = self.model_service.embedding(query).tolist()[0]
         result = await self.keyframe_service.search_by_text_exclude_ids(embedding, top_k, score_threshold, exclude_ids)
         return result
+    
+    async def search_text_with_metadata_filter(
+        self,
+        query: str,
+        top_k: int,
+        score_threshold: float,
+        metadata_filter: Optional[MetadataFilter] = None
+    ):
+        """
+        Search for keyframes with metadata filtering
+        """
+        embedding = self.model_service.embedding(query).tolist()[0]
+        
+        # Convert MetadataFilter to dict format for the service
+        filter_dict = None
+        if metadata_filter:
+            filter_dict = {}
+            if metadata_filter.authors:
+                filter_dict["authors"] = metadata_filter.authors
+            if metadata_filter.keywords:
+                filter_dict["keywords"] = metadata_filter.keywords
+            if metadata_filter.min_length is not None:
+                filter_dict["min_length"] = metadata_filter.min_length
+            if metadata_filter.max_length is not None:
+                filter_dict["max_length"] = metadata_filter.max_length
+            if metadata_filter.title_contains:
+                filter_dict["title_contains"] = metadata_filter.title_contains
+            if metadata_filter.description_contains:
+                filter_dict["description_contains"] = metadata_filter.description_contains
+            # Note: Date filtering would need additional implementation
+        
+        result = await self.keyframe_service.search_by_text_with_metadata_filter(
+            embedding, top_k, score_threshold, filter_dict
+        )
+        return result
+
     
 
         

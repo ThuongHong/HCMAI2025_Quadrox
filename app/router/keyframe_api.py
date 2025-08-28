@@ -7,6 +7,7 @@ from schema.request import (
     TextSearchRequest,
     TextSearchWithExcludeGroupsRequest,
     TextSearchWithSelectedGroupsAndVideosRequest,
+    TextSearchWithMetadataFilterRequest,
 )
 from schema.response import KeyframeServiceReponse, SingleKeyframeDisplay, KeyframeDisplay
 from controller.query_controller import QueryController
@@ -217,6 +218,75 @@ async def search_keyframes_selected_groups_videos(
     )
     return KeyframeDisplay(results=display_results)
 
-    
 
+@router.post(
+    "/search/metadata-filter",
+    response_model=KeyframeDisplay,
+    summary="Text search with metadata filtering",
+    description="""
+    Perform text-based search for keyframes with advanced metadata filtering capabilities.
+    
+    This endpoint allows you to search for keyframes while applying sophisticated filters
+    based on video metadata such as author, keywords, video length, title, and description.
+    
+    **Parameters:**
+    - **query**: The search text
+    - **top_k**: Maximum number of results to return
+    - **score_threshold**: Minimum confidence score
+    - **metadata_filter**: Advanced filtering criteria including:
+      - **authors**: Filter by specific channel/author names
+      - **keywords**: Filter by video keywords/tags
+      - **min_length/max_length**: Filter by video duration
+      - **title_contains**: Filter by title content
+      - **description_contains**: Filter by description content
+    
+    **Use Cases:**
+    - Search within content from specific creators
+    - Find videos with particular themes or tags
+    - Filter by video length (short clips vs long videos)
+    - Search for specific topics in titles or descriptions
+    
+    **Example:**
+    ```json
+    {
+        "query": "cooking tutorial",
+        "top_k": 15,
+        "score_threshold": 0.6,
+        "metadata_filter": {
+            "authors": ["Cooking Channel", "Chef John"],
+            "keywords": ["recipe", "tutorial"],
+            "min_length": 300,
+            "max_length": 1800,
+            "title_contains": "easy"
+        }
+    }
+    ```
+    """,
+    response_description="List of matching keyframes filtered by metadata criteria"
+)
+async def search_keyframes_with_metadata_filter(
+    request: TextSearchWithMetadataFilterRequest,
+    controller: QueryController = Depends(get_query_controller)
+):
+    """
+    Search for keyframes with advanced metadata filtering.
+    """
+    logger.info(f"Text search with metadata filter: query='{request.query}', filter={request.metadata_filter}")
+    
+    results = await controller.search_text_with_metadata_filter(
+        query=request.query,
+        top_k=request.top_k,
+        score_threshold=request.score_threshold,
+        metadata_filter=request.metadata_filter
+    )
+    
+    logger.info(f"Found {len(results)} results with metadata filtering")
+
+    display_results = list(
+        map(
+            lambda pair: SingleKeyframeDisplay(path=pair[0], score=pair[1]),
+            map(controller.convert_model_to_path, results)
+        )
+    )
+    return KeyframeDisplay(results=display_results)
 

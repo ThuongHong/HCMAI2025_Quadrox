@@ -34,3 +34,38 @@ class TextSearchWithSelectedGroupsAndVideosRequest(BaseSearchRequest):
     )
 
 
+class MetadataFilter(BaseModel):
+    """Metadata filter criteria"""
+    authors: Optional[List[str]] = Field(
+        None, description="Filter by specific authors/channel names"
+    )
+    keywords: Optional[List[str]] = Field(
+        None, description="Filter by keywords that must be present in video keywords"
+    )
+    min_length: Optional[int] = Field(
+        None, ge=0, description="Minimum video length in seconds"
+    )
+    max_length: Optional[int] = Field(
+        None, ge=0, description="Maximum video length in seconds"
+    )
+    date_from: Optional[str] = Field(
+        None, description="Filter videos published from this date (DD/MM/YYYY format)"
+    )
+    date_to: Optional[str] = Field(
+        None, description="Filter videos published until this date (DD/MM/YYYY format)"
+    )
+    title_contains: Optional[str] = Field(
+        None, description="Filter by title containing specific text"
+    )
+    description_contains: Optional[str] = Field(
+        None, description="Filter by description containing specific text"
+    )
+
+
+class TextSearchWithMetadataFilterRequest(BaseSearchRequest):
+    """Text search request with metadata filtering"""
+    metadata_filter: Optional[MetadataFilter] = Field(
+        None, description="Metadata filter criteria"
+    )
+
+

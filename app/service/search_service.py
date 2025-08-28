@@ -7,6 +7,7 @@ ROOT_DIR = os.path.abspath(
 )
 sys.path.insert(0, ROOT_DIR)
 
+from typing import Optional, Dict, Any
 
 from repository.milvus import KeyframeVectorRepository
 from repository.milvus import MilvusSearchRequest
@@ -128,6 +129,67 @@ class KeyframeQueryService:
         range_queries: a bunch of start end indices, and we just search inside these, ignore everything
         """
         return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)   
+    
+    async def search_by_text_with_metadata_filter(
+        self,
+        text_embedding: list[float],
+        top_k: int,
+        score_threshold: float | None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> list[KeyframeServiceReponse]:
+        """
+        Search for keyframes with metadata filtering
+        """
+        # First, perform the vector search
+        search_request = MilvusSearchRequest(
+            embedding=text_embedding,
+            top_k=top_k * 3,  # Get more results to account for metadata filtering
+            exclude_ids=None
+        )
+
+        search_response = await self.keyframe_vector_repo.search_by_embedding(search_request)
+
+        # Apply score threshold filter
+        filtered_results = [
+            result for result in search_response.results
+            if score_threshold is None or result.distance > score_threshold
+        ]
+
+        sorted_results = sorted(
+            filtered_results, key=lambda r: r.distance, reverse=True
+        )
+
+        sorted_ids = [result.id_ for result in sorted_results]
+
+        # Apply metadata filtering
+        if metadata_filter:
+            keyframes = await self.keyframe_mongo_repo.get_keyframes_with_metadata_filter(
+                sorted_ids, metadata_filter
+            )
+        else:
+            keyframes = await self._retrieve_keyframes(sorted_ids)
+
+        # Create response mapping
+        keyframe_map = {k.key: k for k in keyframes}
+        response = []
+
+        for result in sorted_results:
+            keyframe = keyframe_map.get(result.id_)
+            if keyframe is not None:
+                response.append(
+                    KeyframeServiceReponse(
+                        key=keyframe.key,
+                        video_num=keyframe.video_num,
+                        group_num=keyframe.group_num,
+                        keyframe_num=keyframe.keyframe_num,
+                        confidence_score=result.distance
+                    )
+                )
+                # Stop when we have enough results
+                if len(response) >= top_k:
+                    break
+
+        return response
     
 
 
