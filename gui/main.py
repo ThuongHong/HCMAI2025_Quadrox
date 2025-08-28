@@ -318,31 +318,71 @@ with st.expander("⚙️ API Configuration", expanded=False):
         st.session_state.api_base_url = api_url
 
 # Main search interface
-col1, col2 = st.columns([2, 1])
+st.markdown("### 🔍 Search Method")
+search_tab1, search_tab2 = st.tabs(["📝 Text Search", "🖼️ Image Search"])
 
-with col1:
-    # Search query
-    query = st.text_input(
-        "🔍 Search Query",
-        placeholder="Enter your search query (e.g., 'person walking in the park')",
-        help="Enter 1-1000 characters describing what you're looking for"
-    )
+# TEXT SEARCH TAB
+with search_tab1:
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        # Search query
+        query = st.text_input(
+            "🔍 Search Query",
+            placeholder="Enter your search query (e.g., 'person walking in the park')",
+            help="Enter 1-1000 characters describing what you're looking for"
+        )
+        
+        # Search parameters
+        col_param1, col_param2 = st.columns(2)
+        with col_param1:
+            top_k = st.slider("📊 Max Results", min_value=1, max_value=200, value=10, key="text_top_k")
+        with col_param2:
+            score_threshold = st.slider("🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1, key="text_threshold")
+
+    with col2:
+        # Search mode selector
+        st.markdown("### 🎛️ Search Mode")
+        search_mode = st.selectbox(
+            "Mode",
+            options=["Default", "Exclude Groups", "Include Groups & Videos"],
+            help="Choose how to filter your search results"
+        )
+
+# IMAGE SEARCH TAB  
+with search_tab2:
+    col1, col2 = st.columns([2, 1])
     
-    # Search parameters
-    col_param1, col_param2 = st.columns(2)
-    with col_param1:
-        top_k = st.slider("📊 Max Results", min_value=1, max_value=200, value=10)
-    with col_param2:
-        score_threshold = st.slider("🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1)
-
-with col2:
-    # Search mode selector
-    st.markdown("### 🎛️ Search Mode")
-    search_mode = st.selectbox(
-        "Mode",
-        options=["Default", "Exclude Groups", "Include Groups & Videos"],
-        help="Choose how to filter your search results"
-    )
+    with col1:
+        # Image upload
+        uploaded_file = st.file_uploader(
+            "🖼️ Upload Image",
+            type=['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'webp'],
+            help="Upload an image to search for visually similar keyframes"
+        )
+        
+        if uploaded_file is not None:
+            # Display uploaded image
+            st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
+        
+        # Search parameters for image
+        col_param1, col_param2 = st.columns(2)
+        with col_param1:
+            image_top_k = st.slider("📊 Max Results", min_value=1, max_value=200, value=10, key="image_top_k")
+        with col_param2:
+            image_score_threshold = st.slider("🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1, key="image_threshold")
+    
+    with col2:
+        st.markdown("### 🖼️ Image Search Info")
+        st.info("""
+        **How it works:**
+        - Upload an image file
+        - The system will find keyframes that are visually similar
+        - Supported formats: PNG, JPG, JPEG, BMP, TIFF, WebP
+        """)
+        
+        # Image search doesn't use text-based search modes
+        search_mode = "Default"  # Override for image search
 
 # Mode-specific parameters
 if search_mode == "Exclude Groups":
@@ -503,89 +543,152 @@ if use_metadata_filter:
         metadata_filter["date_to"] = date_to.strftime("%d/%m/%Y")
 
 # Search button and logic
-if st.button("🚀 Search", use_container_width=True):
-    if not query.strip():
-        st.error("Please enter a search query")
-    elif len(query) > 1000:
-        st.error("Query too long. Please keep it under 1000 characters.")
-    else:
-        with st.spinner("🔍 Searching for keyframes..."):
-            try:
-                # Determine endpoint and base payload based on search mode
-                if search_mode == "Default":
-                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
-                    payload = {
-                        "query": query,
-                        "top_k": top_k,
-                        "score_threshold": score_threshold
-                    }
-                
-                elif search_mode == "Exclude Groups":
-                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
-                    payload = {
-                        "query": query,
-                        "top_k": top_k,
-                        "score_threshold": score_threshold,
-                        "exclude_groups": exclude_groups
-                    }
-                
-                else:  # Include Groups & Videos
-                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
-                    payload = {
-                        "query": query,
-                        "top_k": top_k,
-                        "score_threshold": score_threshold,
-                        "include_groups": include_groups,
-                        "include_videos": include_videos
-                    }
-                
-                # If metadata filter is enabled, use metadata-filter endpoint regardless of search mode
-                if use_metadata_filter and metadata_filter:
-                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
-                    payload["metadata_filter"] = metadata_filter
-                    st.info(f"🏷️ Applying metadata filters: {list(metadata_filter.keys())}")
-                
+col_search1, col_search2 = st.columns(2)
 
-                response = requests.post(
-                    endpoint,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.search_results = data.get("results", [])
-                    st.success(f"✅ Found {len(st.session_state.search_results)} results!")
-                else:
-                    st.error(f"❌ API Error: {response.status_code} - {response.text}")
+with col_search1:
+    if st.button("🚀 Text Search", use_container_width=True):
+        if not query.strip():
+            st.error("Please enter a search query")
+        elif len(query) > 1000:
+            st.error("Query too long. Please keep it under 1000 characters.")
+        else:
+            with st.spinner("🔍 Searching for keyframes..."):
+                try:
+                    # Use text search parameters
+                    current_top_k = top_k if 'top_k' in locals() else image_top_k
+                    current_threshold = score_threshold if 'score_threshold' in locals() else image_score_threshold
                     
-            except requests.exceptions.RequestException as e:
-                st.error(f"❌ Connection Error: {str(e)}")
-            except Exception as e:
-                st.error(f"❌ Unexpected Error: {str(e)}")
+                    # Determine endpoint and base payload based on search mode
+                    if search_mode == "Default":
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                        payload = {
+                            "query": query,
+                            "top_k": current_top_k,
+                            "score_threshold": current_threshold
+                        }
+                    
+                    elif search_mode == "Exclude Groups":
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
+                        payload = {
+                            "query": query,
+                            "top_k": current_top_k,
+                            "score_threshold": current_threshold,
+                            "exclude_groups": exclude_groups
+                        }
+                    
+                    else:  # Include Groups & Videos
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
+                        payload = {
+                            "query": query,
+                            "top_k": current_top_k,
+                            "score_threshold": current_threshold,
+                            "include_groups": include_groups,
+                            "include_videos": include_videos
+                        }
+                    
+                    # If metadata filter is enabled, use metadata-filter endpoint regardless of search mode
+                    if use_metadata_filter and metadata_filter:
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
+                        payload["metadata_filter"] = metadata_filter
+                        st.info(f"🏷️ Applying metadata filters: {list(metadata_filter.keys())}")
+                    
+                    response = requests.post(
+                        endpoint,
+                        json=payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    
+                    if response.status_code == 200:
+                        results = response.json()
+                        st.session_state.search_results = results
+                        st.session_state.search_query = query
+                        st.rerun()
+                    else:
+                        st.error(f"Search failed: {response.status_code} - {response.text}")
+                        
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Connection error: {str(e)}")
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+
+with col_search2:
+    if st.button("🖼️ Image Search", use_container_width=True):
+        if uploaded_file is None:
+            st.error("Please upload an image file")
+        else:
+            with st.spinner("🔍 Searching for visually similar keyframes..."):
+                try:
+                    # Prepare the image file for upload
+                    files = {
+                        'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)
+                    }
+                    
+                    # Prepare the parameters
+                    params = {
+                        'top_k': image_top_k,
+                        'score_threshold': image_score_threshold
+                    }
+                    
+                    endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/image"
+                    
+                    response = requests.post(
+                        endpoint,
+                        files=files,
+                        params=params
+                    )
+                    
+                    if response.status_code == 200:
+                        results = response.json()
+                        st.session_state.search_results = results
+                        st.session_state.search_query = f"Image: {uploaded_file.name}"
+                        st.rerun()
+                    else:
+                        st.error(f"Image search failed: {response.status_code} - {response.text}")
+                        
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Connection error: {str(e)}")
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
 
 # Display results
 if st.session_state.search_results:
     st.markdown("---")
     st.markdown("## 📋 Search Results")
     
+    # Show search query if available
+    if hasattr(st.session_state, 'search_query') and st.session_state.search_query:
+        st.info(f"🔍 Search Query: **{st.session_state.search_query}**")
+    
+    # Handle different response formats
+    results_data = st.session_state.search_results
+    if isinstance(results_data, dict) and 'results' in results_data:
+        results_list = results_data['results']
+    else:
+        results_list = results_data
+    
     # Results summary
     col_metric1, col_metric2, col_metric3 = st.columns(3)
     
     with col_metric1:
-        st.metric("Total Results", len(st.session_state.search_results))
+        st.metric("Total Results", len(results_list))
     
     with col_metric2:
-        avg_score = sum(result['score'] for result in st.session_state.search_results) / len(st.session_state.search_results)
-        st.metric("Average Score", f"{avg_score:.3f}")
+        if results_list:
+            avg_score = sum(result['score'] for result in results_list) / len(results_list)
+            st.metric("Average Score", f"{avg_score:.3f}")
+        else:
+            st.metric("Average Score", "N/A")
     
     with col_metric3:
-        max_score = max(result['score'] for result in st.session_state.search_results)
-        st.metric("Best Score", f"{max_score:.3f}")
+        if results_list:
+            max_score = max(result['score'] for result in results_list)
+            st.metric("Best Score", f"{max_score:.3f}")
+        else:
+            st.metric("Best Score", "N/A")
     
     # Sort by score (highest first)
-    sorted_results = sorted(st.session_state.search_results, key=lambda x: x['score'], reverse=True)
+    if results_list:
+        sorted_results = sorted(results_list, key=lambda x: x['score'], reverse=True)
     
     # Display results in a grid
     for i, result in enumerate(sorted_results):

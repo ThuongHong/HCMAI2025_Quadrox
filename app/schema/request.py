@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from fastapi import UploadFile
 
 
 class BaseSearchRequest(BaseModel):
@@ -9,8 +10,19 @@ class BaseSearchRequest(BaseModel):
     score_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold")
 
 
+class BaseImageSearchRequest(BaseModel):
+    """Base image search request with common parameters"""
+    top_k: int = Field(default=10, ge=1, le=500, description="Number of top results to return")
+    score_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold")
+
+
 class TextSearchRequest(BaseSearchRequest):
     """Simple text search request"""
+    pass
+
+
+class ImageSearchRequest(BaseImageSearchRequest):
+    """Simple image search request"""
     pass
 
 

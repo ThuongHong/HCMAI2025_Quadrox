@@ -1,13 +1,16 @@
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 from typing import List, Optional
+from PIL import Image
+import io
 
 from schema.request import (
     TextSearchRequest,
     TextSearchWithExcludeGroupsRequest,
     TextSearchWithSelectedGroupsAndVideosRequest,
     TextSearchWithMetadataFilterRequest,
+    ImageSearchRequest,
 )
 from schema.response import KeyframeServiceReponse, SingleKeyframeDisplay, KeyframeDisplay
 from controller.query_controller import QueryController
@@ -279,4 +282,73 @@ async def search_keyframes_with_metadata_filter(
         for result in results
     ]
     return KeyframeDisplay(results=display_results)
+
+
+@router.post(
+    "/search/image",
+    response_model=KeyframeDisplay,
+    summary="Image-based search for keyframes",
+    description="""
+    Perform an image-based search for keyframes using visual similarity.
+    
+    This endpoint converts the uploaded image to an embedding and searches for 
+    the most visually similar keyframes in the database.
+    
+    **Parameters:**
+    - **file**: The image file to search with (JPEG, PNG, etc.)
+    - **top_k**: Maximum number of results to return (1-100, default: 10)
+    - **score_threshold**: Minimum confidence score (0.0-1.0, default: 0.0)
+    
+    **Returns:**
+    List of keyframes with their metadata and confidence scores, ordered by visual similarity.
+    
+    **Supported formats:**
+    - JPEG, PNG, BMP, TIFF, WebP
+    
+    **Example usage:**
+    Upload an image file and specify search parameters to find visually similar keyframes.
+    """,
+    response_description="List of matching keyframes with visual similarity scores"
+)
+async def search_keyframes_by_image(
+    file: UploadFile = File(...),
+    top_k: int = Query(default=10, ge=1, le=500, description="Number of top results to return"),
+    score_threshold: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold"),
+    controller: QueryController = Depends(get_query_controller)
+):
+    """
+    Search for keyframes using image query with visual similarity.
+    """
+    
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    try:
+        # Read and process the uploaded image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+        
+        # Convert to RGB if needed (for PNG with transparency, etc.)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        logger.info(f"Image search request: filename='{file.filename}', top_k={top_k}, threshold={score_threshold}")
+        
+        results = await controller.search_image(
+            image=image,
+            top_k=top_k,
+            score_threshold=score_threshold
+        )
+        
+        logger.info(f"Found {len(results)} results for image: '{file.filename}'")
+        display_results = [
+            SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+            for result in results
+        ]
+        return KeyframeDisplay(results=display_results)
+        
+    except Exception as e:
+        logger.error(f"Error processing image search: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 

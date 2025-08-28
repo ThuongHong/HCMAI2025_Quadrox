@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 from typing import Optional, Dict, Any
+from PIL import Image
 
 import os
 import sys
@@ -167,6 +168,17 @@ class QueryController:
         result = await self.keyframe_service.search_by_text_with_metadata_filter_full(
             embedding, top_k, score_threshold, filter_dict
         )
+        return result
+
+    async def search_image(
+        self, 
+        image,
+        top_k: int,
+        score_threshold: float
+    ):
+        """Search keyframes using image query"""
+        embedding = self.model_service.image_embedding(image).tolist()[0]
+        result = await self.keyframe_service.search_by_text_with_full_metadata(embedding, top_k, score_threshold)
         return result
 
     
