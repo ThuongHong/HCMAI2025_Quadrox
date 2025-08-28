@@ -687,6 +687,7 @@ if st.session_state.search_results:
             st.metric("Best Score", "N/A")
     
     # Sort by score (highest first)
+    sorted_results = []
     if results_list:
         sorted_results = sorted(results_list, key=lambda x: x['score'], reverse=True)
     
