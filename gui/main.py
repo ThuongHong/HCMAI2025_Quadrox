@@ -18,59 +18,13 @@ st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
 
 # Functions
 @st.dialog("Fullscreen Image Viewer", width="large")
-def show_fullscreen_image(image_path, caption, metadata=None):
+def show_fullscreen_image(image_path, caption):
     """Display image in fullscreen dialog with essential metadata"""
-    col_img, col_meta = st.columns([3, 1])
-    
-    with col_img:
-        try:
-            st.image(image_path, use_container_width=True, caption=caption)
-        except Exception as e:
-            st.error(f"Could not load image: {str(e)}")
-            st.write(f"**Path:** {image_path}")
-    
-    with col_meta:
-        st.markdown("### 📋 Quick Info")
-        
-        if metadata:
-            # Display similarity score prominently
-            if 'score' in metadata:
-                st.metric("🎯 Score", f"{metadata['score']:.3f}")
-            
-            # Essential info only
-            essential_info = []
-            
-            if 'video_id' in metadata and metadata['video_id']:
-                essential_info.append(f"**🎥 Video:** {metadata['video_id']}")
-            
-            if 'group_id' in metadata and metadata['group_id']:
-                essential_info.append(f"**📁 Group:** {metadata['group_id']}")
-            
-            if 'author' in metadata and metadata['author']:
-                author = metadata['author'][:25] + "..." if len(metadata['author']) > 25 else metadata['author']
-                essential_info.append(f"**👤 Author:** {author}")
-            
-            if 'title' in metadata and metadata['title']:
-                title = metadata['title'][:40] + "..." if len(metadata['title']) > 40 else metadata['title']
-                essential_info.append(f"**🎬 Title:** {title}")
-            
-            if 'length' in metadata and metadata['length']:
-                length = metadata['length']
-                minutes = int(length) // 60
-                seconds = int(length) % 60
-                essential_info.append(f"**⏱️ Duration:** {minutes}:{seconds:02d}")
-            
-            # # Display essential info
-            # if essential_info:
-            #     for info in essential_info:
-            #         st.markdown(info)
-            
-            # # Quick action to see full details
-            # st.markdown("---")
-            # if st.button("📖 View Full Details", use_container_width=True):
-            #     show_metadata_only(metadata, 0)
-        else:
-            st.info("No metadata available")
+    try:
+        st.image(image_path, use_container_width=True, caption=caption)
+    except Exception as e:
+        st.error(f"Could not load image: {str(e)}")
+        st.write(f"**Path:** {image_path}")
 
 @st.dialog("Metadata Details", width="large") 
 def show_metadata_only(metadata, keyframe_index):
@@ -704,8 +658,8 @@ if st.session_state.search_results:
                     with col_btn1:
                         # Display image with click to fullscreen
                         if st.button(f"🔍 Zoom", key=f"img_{i}", help="View fullscreen with metadata", type="primary", use_container_width=True):
-                            show_fullscreen_image(result['path'], f"Keyframe {i+1} - Score: {result['score']:.3f}", result)
-                    
+                            show_fullscreen_image(result['path'], f"Keyframe {i+1} - Score: {result['score']:.3f}")
+
                     with col_btn2:
                         # View metadata details only
                         if st.button(f"📋 Detail", key=f"detail_{i}", help="View detailed metadata", type="secondary", use_container_width=True):
@@ -763,6 +717,10 @@ if st.session_state.search_results:
                     seconds = int(length) % 60
                     metadata_parts.append(f"<strong>⏱️ Length:</strong> {minutes}:{seconds:02d}")
                 
+                # if 'description' in result and result['description']:
+                #     description = result['description'][:100] + "..." if len(result['description']) > 100 else result['description']
+                #     metadata_parts.append(f"<strong>📝 Description:</strong> {description}")
+                
                 if 'keywords' in result and result['keywords']:
                     keywords = result['keywords']
                     if isinstance(keywords, list):
@@ -773,7 +731,8 @@ if st.session_state.search_results:
                 
                 if 'publish_date' in result and result['publish_date']:
                     metadata_parts.append(f"<strong>📅 Published:</strong> {result['publish_date']}")
-                
+                    
+
                 if metadata_parts:
                     metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
                 

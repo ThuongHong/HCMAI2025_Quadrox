@@ -152,8 +152,10 @@ class QueryController:
         """
         Search for keyframes with metadata filtering
         """
-        embedding = self.model_service.embedding(query).tolist()[0]
-        
+        refined_query, objects = await self._refine_query(query)
+
+        embedding = self.model_service.embedding(refined_query).tolist()[0]
+
         # Convert MetadataFilter to dict format for the service
         filter_dict = None
         if metadata_filter:
@@ -191,6 +193,6 @@ class QueryController:
 
     async def _refine_query(self, query: str) -> tuple[str, list[str]]:
         """
-        Delegate query refinement to the search service.
+        translate + enhance
         """
         return await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)
