@@ -65,7 +65,7 @@ async def search_keyframes(
     Search for keyframes using text query with semantic similarity.
     """
     
-    logger.info(f"Text search request: query='{request.query}', top_k={request.top_k}, threshold={request.score_threshold}")
+    logger.info(f"Text search: '{request.query}' | top_k={request.top_k}, threshold={request.score_threshold}")
     
     results = await controller.search_text(
         query=request.query,
@@ -73,7 +73,7 @@ async def search_keyframes(
         score_threshold=request.score_threshold
     )
     
-    logger.info(f"Found {len(results)} results for query: '{request.query}'")
+    logger.info(f"Found {len(results)} results")
     display_results = [
         SingleKeyframeDisplay(**controller.convert_model_to_display(result))
         for result in results

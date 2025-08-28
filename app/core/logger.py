@@ -10,7 +10,7 @@ class SimpleLogger:
         self,
         name: str,
         log_dir: str = "logs",
-        console_level: str = "DEBUG",
+        console_level: str = "INFO",  # Changed from DEBUG to INFO
         file_level: str = "DEBUG"
     ):
         self.logger = logging.getLogger(name)

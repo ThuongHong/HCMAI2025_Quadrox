@@ -14,6 +14,9 @@ from repository.milvus import MilvusSearchRequest
 from repository.mongo import KeyframeRepository
 
 from schema.response import KeyframeServiceReponse
+from core.logger import SimpleLogger
+
+logger = SimpleLogger(__name__)
 
 class KeyframeQueryService:
     def __init__(
@@ -29,7 +32,7 @@ class KeyframeQueryService:
 
     async def _retrieve_keyframes(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys(ids)
-        print(keyframes[:5])
+        logger.debug(f"Retrieved {len(keyframes)} keyframes: {[k.key for k in keyframes[:5]]}")
   
         keyframe_map = {k.key: k for k in keyframes}
         return_keyframe = [
@@ -39,7 +42,7 @@ class KeyframeQueryService:
 
     async def _retrieve_keyframes_with_metadata(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys_with_metadata(ids)
-        print(keyframes[:5])
+        logger.debug(f"Retrieved {len(keyframes)} keyframes with metadata: {[k.key for k in keyframes[:5]]}")
   
         keyframe_map = {k.key: k for k in keyframes}
         return_keyframe = [
@@ -342,10 +345,10 @@ class KeyframeQueryService:
                 obj = resp.raw  # pydantic object
                 translated_text = (obj.translated_query or query).strip()
                 refined_text = (obj.enhanced_query or translated_text or query).strip()
-                print(f"Final refined query: '{refined_text}' | translated: '{translated_text}'")
+                logger.debug(f"Query refined: '{query}' -> '{refined_text}' (translated: '{translated_text}')")
             except Exception:
                 refined_text = query
-                print(f"Final refined query: '{refined_text}' (fallback)")
+                logger.debug(f"Query refinement failed, using original: '{refined_text}'")
 
             # Step 2: Optional object suggestions via VisualEventExtractor
             objects: list[str] = []
@@ -354,7 +357,7 @@ class KeyframeQueryService:
                     agent_resp = await visual_extractor.extract_visual_events(refined_text)
                     refined_from_extractor = (agent_resp.refined_query or refined_text).strip()
                     if refined_from_extractor != refined_text:
-                        print(f"Agent rephrase: '{refined_text}' -> '{refined_from_extractor}'")
+                        logger.debug(f"Agent refined: '{refined_text}' -> '{refined_from_extractor}'")
                         refined_text = refined_from_extractor
                     objects = agent_resp.list_of_objects or []
             except Exception:

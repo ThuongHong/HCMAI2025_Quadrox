@@ -20,9 +20,13 @@ class Keyframe(Document):
     thumbnail_url: Optional[str] = Field(None, description="Video thumbnail URL")
     watch_url: Optional[str] = Field(None, description="Video watch URL")
 
+    def __str__(self) -> str:
+        """Compact string representation for logging"""
+        return f"Keyframe(key={self.key}, L{self.group_num:02d}_V{self.video_num:03d}_{self.keyframe_num:03d}, author='{self.author[:20]}...', title='{self.title[:30]}...')"
+    
+    def __repr__(self) -> str:
+        """Use compact representation"""
+        return self.__str__()
+
     class Settings:
         name = "keyframes"
-
-
-
-    

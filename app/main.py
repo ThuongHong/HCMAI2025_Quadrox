@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import sys
 import os
+import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -12,6 +13,10 @@ from core.lifespan import lifespan
 from core.logger import SimpleLogger
 
 logger = SimpleLogger(__name__)
+
+# Reduce FastAPI logging noise
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("fastapi").setLevel(logging.WARNING)
 
 
 app = FastAPI(
