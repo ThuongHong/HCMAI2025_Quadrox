@@ -12,6 +12,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Force refresh cache
+import time
+st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
+
 # Functions
 @st.dialog("Fullscreen Image Viewer", width="large")
 def show_fullscreen_image(image_path, caption):
@@ -446,16 +450,28 @@ if st.session_state.search_results:
                     if metadata_parts:
                         metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
                 
-                st.markdown(f"""
+                # Format path for display - show only relative part from keyframes/
+                display_path = result['path']
+                if 'keyframes\\' in display_path:
+                    display_path = display_path.split('keyframes\\')[-1]
+                elif 'keyframes/' in display_path:
+                    display_path = display_path.split('keyframes/')[-1]
+                
+                # Create the result card HTML
+                result_html = f"""
                 <div class="result-card">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                         <h4 style="margin: 0; color: #333;">Result #{i+1}</h4>
                         <span class="score-badge">Score: {result['score']:.3f}</span>
                     </div>
                     {metadata_html}
-                    <p style="margin: 0.5rem 0; color: #666;"><strong>Path:</strong> {result['path']}</p>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                
+                st.markdown(result_html, unsafe_allow_html=True)
+                
+                # Display path separately to avoid HTML issues
+                st.write(f"**Path:** {display_path}")
         
         st.markdown("<br>", unsafe_allow_html=True)
 
