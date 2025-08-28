@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 from fastapi import UploadFile
 
 
@@ -74,10 +74,23 @@ class MetadataFilter(BaseModel):
     )
 
 
+class ObjectFilter(BaseModel):
+    """Object detection filter criteria"""
+    objects: List[str] = Field(
+        ..., description="List of object names to filter by", max_items=20
+    )
+    mode: Literal["any", "all"] = Field(
+        default="any", description="Filter mode: 'any' for at least one match, 'all' for all objects present"
+    )
+
+
 class TextSearchWithMetadataFilterRequest(BaseSearchRequest):
     """Text search request with metadata filtering"""
     metadata_filter: Optional[MetadataFilter] = Field(
         None, description="Metadata filter criteria"
+    )
+    object_filter: Optional[ObjectFilter] = Field(
+        None, description="Object detection filter criteria"
     )
 
 

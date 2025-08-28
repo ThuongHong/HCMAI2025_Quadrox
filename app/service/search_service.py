@@ -1,3 +1,9 @@
+from core.logger import SimpleLogger
+from schema.response import KeyframeServiceReponse
+from repository.mongo import KeyframeRepository
+from repository.milvus import MilvusSearchRequest
+from repository.milvus import KeyframeVectorRepository
+from typing import Optional, Dict, Any
 import os
 import sys
 ROOT_DIR = os.path.abspath(
@@ -7,47 +13,41 @@ ROOT_DIR = os.path.abspath(
 )
 sys.path.insert(0, ROOT_DIR)
 
-from typing import Optional, Dict, Any
-
-from repository.milvus import KeyframeVectorRepository
-from repository.milvus import MilvusSearchRequest
-from repository.mongo import KeyframeRepository
-
-from schema.response import KeyframeServiceReponse
-from core.logger import SimpleLogger
 
 logger = SimpleLogger(__name__)
 
+
 class KeyframeQueryService:
     def __init__(
-            self, 
+            self,
             keyframe_vector_repo: KeyframeVectorRepository,
             keyframe_mongo_repo: KeyframeRepository,
-            
-        ):
+
+    ):
 
         self.keyframe_vector_repo = keyframe_vector_repo
-        self.keyframe_mongo_repo= keyframe_mongo_repo
-
+        self.keyframe_mongo_repo = keyframe_mongo_repo
 
     async def _retrieve_keyframes(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys(ids)
-        logger.debug(f"Retrieved {len(keyframes)} keyframes: {[k.key for k in keyframes[:5]]}")
-  
+        logger.debug(
+            f"Retrieved {len(keyframes)} keyframes: {[k.key for k in keyframes[:5]]}")
+
         keyframe_map = {k.key: k for k in keyframes}
         return_keyframe = [
             keyframe_map[k] for k in ids
-        ]   
+        ]
         return return_keyframe
 
     async def _retrieve_keyframes_with_metadata(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys_with_metadata(ids)
-        logger.debug(f"Retrieved {len(keyframes)} keyframes with metadata: {[k.key for k in keyframes[:5]]}")
-  
+        logger.debug(
+            f"Retrieved {len(keyframes)} keyframes with metadata: {[k.key for k in keyframes[:5]]}")
+
         keyframe_map = {k.key: k for k in keyframes}
         return_keyframe = [
             keyframe_map[k] for k in ids
-        ]   
+        ]
         return return_keyframe
 
     async def _search_keyframes(
@@ -57,7 +57,7 @@ class KeyframeQueryService:
         score_threshold: float | None = None,
         exclude_indices: list[int] | None = None
     ) -> list[KeyframeServiceReponse]:
-        
+
         search_request = MilvusSearchRequest(
             embedding=text_embedding,
             top_k=top_k,
@@ -66,7 +66,6 @@ class KeyframeQueryService:
 
         search_response = await self.keyframe_vector_repo.search_by_embedding(search_request)
 
-        
         filtered_results = [
             result for result in search_response.results
             if score_threshold is None or result.distance > score_threshold
@@ -80,13 +79,11 @@ class KeyframeQueryService:
 
         keyframes = await self._retrieve_keyframes(sorted_ids)
 
-
-
         keyframe_map = {k.key: k for k in keyframes}
         response = []
 
         for result in sorted_results:
-            keyframe = keyframe_map.get(result.id_) 
+            keyframe = keyframe_map.get(result.id_)
             if keyframe is not None:
                 response.append(
                     KeyframeServiceReponse(
@@ -98,7 +95,7 @@ class KeyframeQueryService:
                     )
                 )
         return response
-    
+
     async def _search_keyframes_with_metadata(
         self,
         text_embedding: list[float],
@@ -107,7 +104,7 @@ class KeyframeQueryService:
         exclude_indices: list[int] | None = None
     ) -> list[tuple]:
         """Search keyframes and return full keyframe objects with scores"""
-        
+
         search_request = MilvusSearchRequest(
             embedding=text_embedding,
             top_k=top_k,
@@ -116,7 +113,6 @@ class KeyframeQueryService:
 
         search_response = await self.keyframe_vector_repo.search_by_embedding(search_request)
 
-        
         filtered_results = [
             result for result in search_response.results
             if score_threshold is None or result.distance > score_threshold
@@ -134,11 +130,10 @@ class KeyframeQueryService:
         response = []
 
         for result in sorted_results:
-            keyframe = keyframe_map.get(result.id_) 
+            keyframe = keyframe_map.get(result.id_)
             if keyframe is not None:
                 response.append((keyframe, result.distance))
         return response
-    
 
     async def search_by_text(
         self,
@@ -146,8 +141,8 @@ class KeyframeQueryService:
         top_k: int,
         score_threshold: float | None = 0.5,
     ):
-        return await self._search_keyframes(text_embedding, top_k, score_threshold, None)   
-    
+        return await self._search_keyframes(text_embedding, top_k, score_threshold, None)
+
     async def search_by_text_with_full_metadata(
         self,
         text_embedding: list[float],
@@ -156,7 +151,7 @@ class KeyframeQueryService:
     ):
         """Search and return full keyframe objects with metadata"""
         return await self._search_keyframes_with_metadata(text_embedding, top_k, score_threshold, None)
-    
+
     async def search_by_text_exclude_ids_with_metadata(
         self,
         text_embedding: list[float],
@@ -165,15 +160,14 @@ class KeyframeQueryService:
         exclude_ids: list[int] | None
     ):
         """Search excluding IDs and return full keyframe objects with metadata"""
-        return await self._search_keyframes_with_metadata(text_embedding, top_k, score_threshold, exclude_ids)   
-    
+        return await self._search_keyframes_with_metadata(text_embedding, top_k, score_threshold, exclude_ids)
 
     async def search_by_text_range(
         self,
         text_embedding: list[float],
         top_k: int,
         score_threshold: float | None,
-        range_queries: list[tuple[int,int]]
+        range_queries: list[tuple[int, int]]
     ):
         """
         range_queries: a bunch of start end indices, and we just search inside these, ignore everything
@@ -183,12 +177,10 @@ class KeyframeQueryService:
         allowed_ids = set()
         for start, end in range_queries:
             allowed_ids.update(range(start, end + 1))
-        
-        
+
         exclude_ids = [id_ for id_ in all_ids if id_ not in allowed_ids]
 
-        return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)   
-    
+        return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)
 
     async def search_by_text_exclude_ids(
         self,
@@ -200,22 +192,23 @@ class KeyframeQueryService:
         """
         range_queries: a bunch of start end indices, and we just search inside these, ignore everything
         """
-        return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)   
-    
+        return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)
+
     async def search_by_text_with_metadata_filter(
         self,
         text_embedding: list[float],
         top_k: int,
         score_threshold: float | None,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        object_filter: Optional[Dict[str, Any]] = None
     ) -> list[KeyframeServiceReponse]:
         """
-        Search for keyframes with metadata filtering
+        Search for keyframes with metadata and object filtering
         """
         # First, perform the vector search
         search_request = MilvusSearchRequest(
             embedding=text_embedding,
-            top_k=top_k * 3,  # Get more results to account for metadata filtering
+            top_k=top_k * 3,  # Get more results to account for filtering
             exclude_ids=None
         )
 
@@ -233,10 +226,10 @@ class KeyframeQueryService:
 
         sorted_ids = [result.id_ for result in sorted_results]
 
-        # Apply metadata filtering
-        if metadata_filter:
+        # Apply metadata and object filtering
+        if metadata_filter or object_filter:
             keyframes = await self.keyframe_mongo_repo.get_keyframes_with_metadata_filter(
-                sorted_ids, metadata_filter
+                sorted_ids, metadata_filter, object_filter
             )
         else:
             keyframes = await self._retrieve_keyframes(sorted_ids)
@@ -262,21 +255,22 @@ class KeyframeQueryService:
                     break
 
         return response
-    
+
     async def search_by_text_with_metadata_filter_full(
         self,
         text_embedding: list[float],
         top_k: int,
         score_threshold: float | None,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        object_filter: Optional[Dict[str, Any]] = None
     ) -> list[tuple]:
         """
-        Search for keyframes with metadata filtering and return full keyframe objects
+        Search for keyframes with metadata and object filtering and return full keyframe objects
         """
         # First, perform the vector search
         search_request = MilvusSearchRequest(
             embedding=text_embedding,
-            top_k=top_k * 3,  # Get more results to account for metadata filtering
+            top_k=top_k * 3,  # Get more results to account for filtering
             exclude_ids=None
         )
 
@@ -294,10 +288,10 @@ class KeyframeQueryService:
 
         sorted_ids = [result.id_ for result in sorted_results]
 
-        # Apply metadata filtering
-        if metadata_filter:
+        # Apply metadata and object filtering
+        if metadata_filter or object_filter:
             keyframes = await self.keyframe_mongo_repo.get_keyframes_with_metadata_filter(
-                sorted_ids, metadata_filter
+                sorted_ids, metadata_filter, object_filter
             )
         else:
             keyframes = await self._retrieve_keyframes_with_metadata(sorted_ids)
@@ -315,52 +309,57 @@ class KeyframeQueryService:
                     break
 
         return response
-    
+
     async def _refine_query(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str]]:
-            """
-            Use LLM to:
-            1) Translate Vietnamese→English (or keep original if English)
-            2) Enhance the query for visual retrieval
-            3) Optionally extract relevant objects via VisualEventExtractor
-            Fallback to original on any error or if LLM unavailable.
-            """
-            if llm is None:
-                return query, []
+        """
+        Use LLM to:
+        1) Translate Vietnamese→English (or keep original if English)
+        2) Enhance the query for visual retrieval
+        3) Optionally extract relevant objects via VisualEventExtractor
+        Fallback to original on any error or if LLM unavailable.
+        """
+        if llm is None:
+            return query, []
 
-            # Step 1: Translation + enhancement via structured schema
-            translation_prompt = (
-                "You are a retrieval query optimizer.\n"
-                "1) Detect language; if Vietnamese, translate to English. If already English, keep text.\n"
-                "2) Produce an enhanced English query optimized for semantic video/keyframe retrieval:\n"
-                "   - Use concrete visual nouns, actions, colors, settings, spatial relations\n"
-                "   - Remove filler; keep core visual concepts\n"
-                "Return strict JSON: {\"translated_query\":\"<english>\", \"enhanced_query\":\"<optimized>\"}.\n\n"
-                f"Input: \"\"\"{query}\"\"\""
-            )
+        # Step 1: Translation + enhancement via structured schema
+        translation_prompt = (
+            "You are a retrieval query optimizer.\n"
+            "1) Detect language; if Vietnamese, translate to English. If already English, keep text.\n"
+            "2) Produce an enhanced English query optimized for semantic video/keyframe retrieval:\n"
+            "   - Use concrete visual nouns, actions, colors, settings, spatial relations\n"
+            "   - Remove filler; keep core visual concepts\n"
+            "Return strict JSON: {\"translated_query\":\"<english>\", \"enhanced_query\":\"<optimized>\"}.\n\n"
+            f"Input: \"\"\"{query}\"\"\""
+        )
 
+        refined_text = query
+        try:
+            from schema.agent import QueryRefineResponse
+            resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
+            obj = resp.raw  # pydantic object
+            translated_text = (obj.translated_query or query).strip()
+            refined_text = (
+                obj.enhanced_query or translated_text or query).strip()
+            logger.debug(
+                f"Query refined: '{query}' -> '{refined_text}' (translated: '{translated_text}')")
+        except Exception:
             refined_text = query
-            try:
-                from schema.agent import QueryRefineResponse
-                resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
-                obj = resp.raw  # pydantic object
-                translated_text = (obj.translated_query or query).strip()
-                refined_text = (obj.enhanced_query or translated_text or query).strip()
-                logger.debug(f"Query refined: '{query}' -> '{refined_text}' (translated: '{translated_text}')")
-            except Exception:
-                refined_text = query
-                logger.debug(f"Query refinement failed, using original: '{refined_text}'")
+            logger.debug(
+                f"Query refinement failed, using original: '{refined_text}'")
 
-            # Step 2: Optional object suggestions via VisualEventExtractor
-            objects: list[str] = []
-            try:
-                if visual_extractor is not None:
-                    agent_resp = await visual_extractor.extract_visual_events(refined_text)
-                    refined_from_extractor = (agent_resp.refined_query or refined_text).strip()
-                    if refined_from_extractor != refined_text:
-                        logger.debug(f"Agent refined: '{refined_text}' -> '{refined_from_extractor}'")
-                        refined_text = refined_from_extractor
-                    objects = agent_resp.list_of_objects or []
-            except Exception:
-                pass
+        # Step 2: Optional object suggestions via VisualEventExtractor
+        objects: list[str] = []
+        try:
+            if visual_extractor is not None:
+                agent_resp = await visual_extractor.extract_visual_events(refined_text)
+                refined_from_extractor = (
+                    agent_resp.refined_query or refined_text).strip()
+                if refined_from_extractor != refined_text:
+                    logger.debug(
+                        f"Agent refined: '{refined_text}' -> '{refined_from_extractor}'")
+                    refined_text = refined_from_extractor
+                objects = agent_resp.list_of_objects or []
+        except Exception:
+            pass
 
-            return refined_text, objects
+        return refined_text, objects

@@ -19,6 +19,9 @@ class Keyframe(Document):
     publish_date: Optional[str] = Field(None, description="Video publish date")
     thumbnail_url: Optional[str] = Field(None, description="Video thumbnail URL")
     watch_url: Optional[str] = Field(None, description="Video watch URL")
+    
+    # Object detection fields
+    objects: Annotated[Optional[List[str]], Indexed()] = Field(None, description="Detected objects in keyframe")
 
     def __str__(self) -> str:
         """Compact string representation for logging"""

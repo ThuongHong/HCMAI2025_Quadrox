@@ -64,24 +64,22 @@ async def search_keyframes(
     """
     Search for keyframes using text query with semantic similarity.
     """
-    
-    logger.info(f"Text search: '{request.query}' | top_k={request.top_k}, threshold={request.score_threshold}")
-    
+
+    logger.info(
+        f"Text search: '{request.query}' | top_k={request.top_k}, threshold={request.score_threshold}")
+
     results = await controller.search_text(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold
     )
-    
+
     logger.info(f"Found {len(results)} results")
     display_results = [
         SingleKeyframeDisplay(**controller.convert_model_to_display(result))
         for result in results
     ]
     return KeyframeDisplay(results=display_results)
-
-    
-
 
 
 @router.post(
@@ -125,26 +123,24 @@ async def search_keyframes_exclude_groups(
     Search for keyframes with group exclusion filtering.
     """
 
-    logger.info(f"Text search with group exclusion: query='{request.query}', exclude_groups={request.exclude_groups}")
-    
+    logger.info(
+        f"Text search with group exclusion: query='{request.query}', exclude_groups={request.exclude_groups}")
+
     results: list[KeyframeServiceReponse] = await controller.search_text_with_exlude_group(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
         list_group_exlude=request.exclude_groups
     )
-    
-    logger.info(f"Found {len(results)} results excluding groups {request.exclude_groups}")
-    
+
+    logger.info(
+        f"Found {len(results)} results excluding groups {request.exclude_groups}")
+
     display_results = [
         SingleKeyframeDisplay(**controller.convert_model_to_display(result))
         for result in results
     ]
     return KeyframeDisplay(results=display_results)
-
-
-
-
 
 
 @router.post(
@@ -195,8 +191,9 @@ async def search_keyframes_selected_groups_videos(
     Search for keyframes within selected groups and videos.
     """
 
-    logger.info(f"Text search with selection: query='{request.query}', include_groups={request.include_groups}, include_videos={request.include_videos}")
-    
+    logger.info(
+        f"Text search with selection: query='{request.query}', include_groups={request.include_groups}, include_videos={request.include_videos}")
+
     results = await controller.search_with_selected_video_group(
         query=request.query,
         top_k=request.top_k,
@@ -204,7 +201,7 @@ async def search_keyframes_selected_groups_videos(
         list_of_include_groups=request.include_groups,
         list_of_include_videos=request.include_videos
     )
-    
+
     logger.info(f"Found {len(results)} results within selected groups/videos")
 
     display_results = [
@@ -217,65 +214,86 @@ async def search_keyframes_selected_groups_videos(
 @router.post(
     "/search/metadata-filter",
     response_model=KeyframeDisplay,
-    summary="Text search with metadata filtering",
+    summary="Text search with advanced filtering",
     description="""
-    Perform text-based search for keyframes with advanced metadata filtering capabilities.
+    Perform text-based search for keyframes with advanced filtering capabilities.
     
     This endpoint allows you to search for keyframes while applying sophisticated filters
-    based on video metadata such as author, keywords, video length, title, and description.
+    based on video metadata and detected objects in keyframes.
     
     **Parameters:**
     - **query**: The search text
     - **top_k**: Maximum number of results to return
     - **score_threshold**: Minimum confidence score
-    - **metadata_filter**: Advanced filtering criteria including:
+    - **metadata_filter**: Advanced metadata filtering criteria including:
       - **authors**: Filter by specific channel/author names
       - **keywords**: Filter by video keywords/tags
       - **min_length/max_length**: Filter by video duration
       - **title_contains**: Filter by title content
       - **description_contains**: Filter by description content
+      - **date_from/date_to**: Filter by publish date range (DD/MM/YYYY format)
+    - **object_filter**: Object detection filtering criteria including:
+      - **objects**: List of object names to filter by (max 20)
+      - **mode**: Filter mode - "any" (at least one object) or "all" (all objects present)
     
     **Use Cases:**
     - Search within content from specific creators
     - Find videos with particular themes or tags
     - Filter by video length (short clips vs long videos)
     - Search for specific topics in titles or descriptions
+    - Find keyframes containing specific objects (cars, people, buildings, etc.)
+    - Combine metadata and object filters for precise results
     
     **Example:**
     ```json
     {
-        "query": "cooking tutorial",
+        "query": "city street scene",
         "top_k": 15,
         "score_threshold": 0.6,
         "metadata_filter": {
-            "authors": ["Cooking Channel", "Chef John"],
-            "keywords": ["recipe", "tutorial"],
-            "min_length": 300,
-            "max_length": 1800,
-            "title_contains": "easy"
+            "authors": ["Travel Channel"],
+            "keywords": ["city", "urban"],
+            "min_length": 300
+        },
+        "object_filter": {
+            "objects": ["car", "building", "person"],
+            "mode": "any"
         }
     }
     ```
     """,
-    response_description="List of matching keyframes filtered by metadata criteria"
+    response_description="List of matching keyframes filtered by metadata and object criteria"
 )
 async def search_keyframes_with_metadata_filter(
     request: TextSearchWithMetadataFilterRequest,
     controller: QueryController = Depends(get_query_controller)
 ):
     """
-    Search for keyframes with advanced metadata filtering.
+    Search for keyframes with advanced metadata and object filtering.
     """
-    logger.info(f"Text search with metadata filter: query='{request.query}', filter={request.metadata_filter}")
-    
+    filter_info = []
+    if request.metadata_filter:
+        filter_info.append("metadata")
+    if request.object_filter:
+        # Show first 5 objects
+        objects_str = ", ".join(request.object_filter.objects[:5])
+        if len(request.object_filter.objects) > 5:
+            objects_str += f" (+{len(request.object_filter.objects) - 5} more)"
+        filter_info.append(
+            f"objects[{request.object_filter.mode}]: {objects_str}")
+
+    logger.info(
+        f"Advanced search: query='{request.query}', filters=[{', '.join(filter_info)}]")
+
     results = await controller.search_text_with_metadata_filter(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
-        metadata_filter=request.metadata_filter
+        metadata_filter=request.metadata_filter,
+        object_filter=request.object_filter
     )
-    
-    logger.info(f"Found {len(results)} results with metadata filtering")
+
+    logger.info(f"Found {len(results)} results with advanced filtering")
 
     display_results = [
         SingleKeyframeDisplay(**controller.convert_model_to_display(result))
@@ -312,43 +330,48 @@ async def search_keyframes_with_metadata_filter(
 )
 async def search_keyframes_by_image(
     file: UploadFile = File(...),
-    top_k: int = Query(default=10, ge=1, le=500, description="Number of top results to return"),
-    score_threshold: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold"),
+    top_k: int = Query(default=10, ge=1, le=500,
+                       description="Number of top results to return"),
+    score_threshold: float = Query(
+        default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold"),
     controller: QueryController = Depends(get_query_controller)
 ):
     """
     Search for keyframes using image query with visual similarity.
     """
-    
+
     # Validate file type
     if not file.content_type or not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="File must be an image")
-    
+
     try:
         # Read and process the uploaded image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
-        
+
         # Convert to RGB if needed (for PNG with transparency, etc.)
         if image.mode != 'RGB':
             image = image.convert('RGB')
-        
-        logger.info(f"Image search request: filename='{file.filename}', top_k={top_k}, threshold={score_threshold}")
-        
+
+        logger.info(
+            f"Image search request: filename='{file.filename}', top_k={top_k}, threshold={score_threshold}")
+
         results = await controller.search_image(
             image=image,
             top_k=top_k,
             score_threshold=score_threshold
         )
-        
-        logger.info(f"Found {len(results)} results for image: '{file.filename}'")
+
+        logger.info(
+            f"Found {len(results)} results for image: '{file.filename}'")
         display_results = [
-            SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+            SingleKeyframeDisplay(
+                **controller.convert_model_to_display(result))
             for result in results
         ]
         return KeyframeDisplay(results=display_results)
-        
+
     except Exception as e:
         logger.error(f"Error processing image search: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
-
+        raise HTTPException(
+            status_code=500, detail=f"Error processing image: {str(e)}")

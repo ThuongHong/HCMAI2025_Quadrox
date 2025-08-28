@@ -26,6 +26,8 @@ class SingleKeyframeDisplay(BaseModel):
     publish_date: Optional[str] = None
     thumbnail_url: Optional[str] = None
     watch_url: Optional[str] = None
+    # Object detection fields
+    objects: Optional[List[str]] = None
 
 class KeyframeDisplay(BaseModel):
     results: list[SingleKeyframeDisplay]
