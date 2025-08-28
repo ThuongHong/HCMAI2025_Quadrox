@@ -13,7 +13,8 @@ sys.path.insert(0, ROOT_DIR)
 
 from service import ModelService, KeyframeQueryService
 from schema.response import KeyframeServiceReponse
-
+from llama_index.core.llms import LLM
+from agent.agent import VisualEventExtractor
 
 class QueryController:
     
@@ -22,13 +23,15 @@ class QueryController:
         data_folder: Path,
         id2index_path: Path,
         model_service: ModelService,
-        keyframe_service: KeyframeQueryService
+        keyframe_service: KeyframeQueryService,
+        llm: LLM,
     ):
         self.data_folder = data_folder
         self.id2index = json.load(open(id2index_path, 'r'))
         self.model_service = model_service
         self.keyframe_service = keyframe_service
-
+        self.llm = llm
+        self.visual_extractor = VisualEventExtractor(llm) if llm is not None else None
     
     def convert_model_to_path(
         self,
@@ -43,7 +46,10 @@ class QueryController:
         top_k: int,
         score_threshold: float
     ):
-        embedding = self.model_service.embedding(query).tolist()[0]
+
+        refined_query, objects = await self._refine_query(query)
+
+        embedding = self.model_service.embedding(refined_query).tolist()[0]
 
         result = await self.keyframe_service.search_by_text(embedding, top_k, score_threshold)
         return result
@@ -61,9 +67,9 @@ class QueryController:
             if int(v.split('/')[0]) in list_group_exlude
         ]
 
-        
-        
-        embedding = self.model_service.embedding(query).tolist()[0]
+        refined_query, objects = await self._refine_query(query)
+                
+        embedding = self.model_service.embedding(refined_query).tolist()[0]
         result = await self.keyframe_service.search_by_text_exclude_ids(embedding, top_k, score_threshold, exclude_ids)
         return result
 
@@ -76,7 +82,7 @@ class QueryController:
         list_of_include_groups: list[int]  ,
         list_of_include_videos: list[int]  
     ):     
-        
+
 
         exclude_ids = None
         if len(list_of_include_groups) > 0   and len(list_of_include_videos) == 0:
@@ -103,12 +109,14 @@ class QueryController:
                 )
             ]
 
+        refined_query, objects = await self._refine_query(query)
 
-
-        embedding = self.model_service.embedding(query).tolist()[0]
+        embedding = self.model_service.embedding(refined_query).tolist()[0]
         result = await self.keyframe_service.search_by_text_exclude_ids(embedding, top_k, score_threshold, exclude_ids)
         return result
-    
 
-        
-
+    async def _refine_query(self, query: str) -> tuple[str, list[str]]:
+        """
+        Delegate query refinement to the search service.
+        """
+        return await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)

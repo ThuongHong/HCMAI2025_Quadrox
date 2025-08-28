@@ -15,4 +15,7 @@ class AgentQueryResponse(BaseModel):
     query: str = Field(..., description="Original query")
     answer: str = Field(..., description="Generated answer")
 
+class QueryRefineResponse(BaseModel):
+    translated_query: str = Field(..., description="Input translated to English (or original if already English)")
+    enhanced_query: str = Field(..., description="Optimized English query for retrieval")
 

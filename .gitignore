@@ -209,3 +209,4 @@ data/
 *.npy
 *.jpg
 *.json
+/tests

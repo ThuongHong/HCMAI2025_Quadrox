@@ -40,8 +40,6 @@ def get_llm() -> LLM:
     )
 
 
-
-
 @lru_cache()
 def get_app_settings():
     """Get MongoDB settings (cached)"""
@@ -204,7 +202,8 @@ def get_query_controller(
             data_folder=data_folder,
             id2index_path=id2index_path,
             model_service=model_service,
-            keyframe_service=keyframe_service
+            keyframe_service=keyframe_service,
+            llm=get_llm()
         )
         
         logger.info("Query controller created successfully")

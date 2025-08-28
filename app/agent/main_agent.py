@@ -32,7 +32,7 @@ def apply_object_filter(
         filtered_keyframes = []
 
         for kf in keyframes:
-            keyy = f"L{kf.group_num:02d}/V{kf.video_num:03d}/{kf.keyframe_num:08d}.webp"
+            keyy = f"L{kf.group_num:02d}/L{kf.group_num:02d}_V{kf.video_num:03d}/{kf.keyframe_num:03d}.jpg"
             keyframe_objects = objects_data.get(keyy, [])
             print(f"{keyy=}")
             print(f"{keyframe_objects=}")
@@ -83,9 +83,9 @@ class KeyframeSearchAgent:
         """
 
         agent_response = await self.query_extractor.extract_visual_events(user_query)
-        search_query = agent_response.refined_query
-        suggested_objects = agent_response.list_of_objects
-
+        search_query = agent_response.refined_query.strip() if agent_response and agent_response.refined_query else user_query
+        print(f"{search_query=}")
+        suggested_objects = agent_response.list_of_objects or []
 
         print(f"{search_query=}")
         print(f"{suggested_objects=}")

@@ -1,7 +1,6 @@
 import re
 from typing import  cast
 from llama_index.core.llms import LLM
-from llama_index.core import PromptTemplate
 from schema.agent import AgentResponse
 from pathlib import Path
 
@@ -10,108 +9,16 @@ from collections import defaultdict
 from schema.response import KeyframeServiceReponse
 import os
 from llama_index.core.llms import ChatMessage, ImageBlock, TextBlock, MessageRole
+from .promts import Prompt, COCO_CLASS
 
 
-COCO_CLASS = """
-person
-bicycle
-car
-motorcycle
-airplane
-bus
-train
-truck
-boat
-traffic light
-fire hydrant
-stop sign
-parking meter
-bench
-bird
-cat
-dog
-horse
-sheep
-cow
-elephant
-bear
-zebra
-giraffe
-backpack
-umbrella
-handbag
-tie
-suitcase
-frisbee
-skis
-snowboard
-sports ball
-kite
-baseball bat
-baseball glove
-skateboard
-surfboard
-tennis racket
-bottle
-wine glass
-cup
-fork
-knife
-spoon
-bowl
-banana
-apple
-sandwich
-orange
-broccoli
-carrot
-hot dog
-pizza
-donut
-cake
-chair
-couch
-potted plant
-bed
-dining table
-toilet
-tv
-laptop
-mouse
-remote
-keyboard
-cell phone
-microwave
-oven
-toaster
-sink
-refrigerator
-book
-clock
-vase
-scissors
-teddy bear
-hair drier
-toothbrush
-"""
 
 class VisualEventExtractor:
     
     def __init__(self, llm: LLM):
         self.llm = llm
-        self.extraction_prompt = PromptTemplate(
-            """
-            Extract visual elements and events from the following query. 
-            Focus on concrete, searchable visual descriptions and actions.
+        self.extraction_prompt = Prompt.VISUAL_EVENT_EXTRACTION_PROMPT
             
-            COCO: {coco}
-            Query: {query}
-            
-            
-            Please extract the key visual elements, and events/actions within a query. And then rephrase them in a way that it is effective for embedding search. And Optionally, based on the original query, if you think we SHOULD use these COCO objects as the last filter to narrow down the search keyframes and have a better answer for the user questions, then feel free to provide a list!
-            No explanation, just the rephrased query, and the optional list of coco class
-            """
-        )
 
     async def extract_visual_events(self, query: str) -> AgentResponse:
         prompt = self.extraction_prompt.format(query=query, coco=COCO_CLASS)
@@ -151,24 +58,7 @@ class AnswerGenerator:
     def __init__(self, llm: LLM, data_folder: str):
         self.data_folder = data_folder
         self.llm = llm
-        self.answer_prompt = PromptTemplate(
-            """
-            Based on the user's query and the relevant keyframes found, generate a comprehensive answer.
-            
-            Original Query and questions: {query}
-            
-            Relevant Keyframes:
-            {keyframes_context}
-            
-            Please provide a detailed answer that:
-            1. Directly addresses the user's query
-            2. References specific information from the keyframes
-            3. Synthesizes information across multiple keyframes if relevant
-            4. Mentions which videos/keyframes contain the most relevant content
-            
-            Keep the answer informative but concise.
-            """
-        )
+        self.answer_prompt = Prompt.ANSWER_GENERATION_PROMPT
     
     async def generate_answer(
         self,
@@ -179,10 +69,10 @@ class AnswerGenerator:
     ):
         chat_messages = []
         for kf in final_keyframes:
-            keyy = f"L{kf.group_num:02d}/V{kf.video_num:03d}/{kf.keyframe_num:08d}.webb"
+            keyy = f"L{kf.group_num:02d}/L{kf.group_num:02d}_V{kf.video_num:03d}/{kf.keyframe_num:03d}.jpg"
             objects = objects_data.get(keyy, [])
 
-            image_path = os.path.join(self.data_folder, f"L{kf.group_num:02d}/V{kf.video_num:03d}/{kf.keyframe_num:08d}.webp")
+            image_path = os.path.join(self.data_folder, f"L{kf.group_num:02d}/L{kf.group_num:02d}_V{kf.video_num:03d}/{kf.keyframe_num:03d}.jpg")
 
             context_text = f"""
             Keyframe {kf.key} from Video {kf.video_num} (Confidence: {kf.confidence_score:.3f}):

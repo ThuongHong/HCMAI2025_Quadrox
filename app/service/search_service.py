@@ -129,34 +129,51 @@ class KeyframeQueryService:
         """
         return await self._search_keyframes(text_embedding, top_k, score_threshold, exclude_ids)   
     
+    async def _refine_query(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str]]:
+            """
+            Use LLM to:
+            1) Translate Vietnamese→English (or keep original if English)
+            2) Enhance the query for visual retrieval
+            3) Optionally extract relevant objects via VisualEventExtractor
+            Fallback to original on any error or if LLM unavailable.
+            """
+            if llm is None:
+                return query, []
 
+            # Step 1: Translation + enhancement via structured schema
+            translation_prompt = (
+                "You are a retrieval query optimizer.\n"
+                "1) Detect language; if Vietnamese, translate to English. If already English, keep text.\n"
+                "2) Produce an enhanced English query optimized for semantic video/keyframe retrieval:\n"
+                "   - Use concrete visual nouns, actions, colors, settings, spatial relations\n"
+                "   - Remove filler; keep core visual concepts\n"
+                "Return strict JSON: {\"translated_query\":\"<english>\", \"enhanced_query\":\"<optimized>\"}.\n\n"
+                f"Input: \"\"\"{query}\"\"\""
+            )
 
-    
+            refined_text = query
+            try:
+                from schema.agent import QueryRefineResponse
+                resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
+                obj = resp.raw  # pydantic object
+                translated_text = (obj.translated_query or query).strip()
+                refined_text = (obj.enhanced_query or translated_text or query).strip()
+                print(f"Final refined query: '{refined_text}' | translated: '{translated_text}'")
+            except Exception:
+                refined_text = query
+                print(f"Final refined query: '{refined_text}' (fallback)")
 
+            # Step 2: Optional object suggestions via VisualEventExtractor
+            objects: list[str] = []
+            try:
+                if visual_extractor is not None:
+                    agent_resp = await visual_extractor.extract_visual_events(refined_text)
+                    refined_from_extractor = (agent_resp.refined_query or refined_text).strip()
+                    if refined_from_extractor != refined_text:
+                        print(f"Agent rephrase: '{refined_text}' -> '{refined_from_extractor}'")
+                        refined_text = refined_from_extractor
+                    objects = agent_resp.list_of_objects or []
+            except Exception:
+                pass
 
-
-
-    
-        
-
-
-
-        
-
-        
-
-        
-        
-        
-
-
-        
-
-        
-
-
-
-
-
-
-
+            return refined_text, objects
