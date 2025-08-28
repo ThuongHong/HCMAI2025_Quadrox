@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from PIL import Image
 
 
 class ModelService:
@@ -24,5 +25,14 @@ class ModelService:
             text_tokens = self.tokenizer([query_text]).to(self.device)
             query_embedding = self.model.encode_text(text_tokens).cpu().detach().numpy().astype(np.float32) # (1, 1024)
         return query_embedding
+
+    def image_embedding(self, image: Image.Image) -> np.ndarray:
+        """
+        Return (1, ndim 1024) torch.Tensor from image
+        """
+        with torch.no_grad():
+            image_preprocessed = self.preprocess(image).unsqueeze(0).to(self.device)
+            image_embedding = self.model.encode_image(image_preprocessed).cpu().detach().numpy().astype(np.float32) # (1, 1024)
+        return image_embedding
 
             
