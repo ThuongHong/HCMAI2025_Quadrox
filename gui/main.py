@@ -60,15 +60,15 @@ def show_fullscreen_image(image_path, caption, metadata=None):
                 seconds = int(length) % 60
                 essential_info.append(f"**⏱️ Duration:** {minutes}:{seconds:02d}")
             
-            # Display essential info
-            if essential_info:
-                for info in essential_info:
-                    st.markdown(info)
+            # # Display essential info
+            # if essential_info:
+            #     for info in essential_info:
+            #         st.markdown(info)
             
-            # Quick action to see full details
-            st.markdown("---")
-            if st.button("📖 View Full Details", use_container_width=True):
-                show_metadata_only(metadata, 0)
+            # # Quick action to see full details
+            # st.markdown("---")
+            # if st.button("📖 View Full Details", use_container_width=True):
+            #     show_metadata_only(metadata, 0)
         else:
             st.info("No metadata available")
 
@@ -608,8 +608,8 @@ if st.session_state.search_results:
                             show_metadata_only(result, i)
                     
                     # Show thumbnail image
-                    st.image(result['path'], width=200, caption=f"Keyframe {i+1}")
-                    
+                    st.image(result['path'], width=300, caption=f"Keyframe {i+1}")
+
                 except Exception as e:
                     st.markdown(f"""
                     <div style="
