@@ -495,13 +495,17 @@ with search_tab1:
         targets_input = st.text_input(
             label='Target to find',
             placeholder="(e.g., 'Bitexco, Landmark 81, ...')",
+            key="targets_input"
         )
 
         contexts_input = st.text_input(
             label='Context to refine search',
             placeholder="(e.g., 'using flycam, on the mountain, at night...')",
+            key="contexts_input"
         )
 
+        targets_list  = [x.strip() for x in (targets_input or "").split(",")  if x.strip()]
+        contexts_list = [x.strip() for x in (contexts_input or "").split(",") if x.strip()]
         # Search parameters
         col_param1, col_param2 = st.columns(2)
         with col_param1:
@@ -1309,7 +1313,19 @@ with col_search1:
 
                         st.info(
                             f"🎯 Applying filters: {' | '.join(filter_info)}")
+                    payload_tc = dict(payload)
+                    if targets_list:
+                        payload_tc["targets"] = targets_list
+                    if contexts_list:
+                        payload_tc["contexts"] = contexts_list
 
+                    use_tc = (len(targets_list) > 0 or len(contexts_list) > 0)
+                    filters_on = ((use_metadata_filter and metadata_filter) or (use_object_filter and object_filter))
+                    if use_tc and not filters_on and search_mode == "Default":
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/tc"
+                        payload = payload_tc
+                    else:
+                        payload = payload_tc
                     # Show the final endpoint being used
                     endpoint_display = endpoint.split('/')[-1]  # Just show the last part
                     st.info(f"🔗 Using endpoint: {endpoint_display}")

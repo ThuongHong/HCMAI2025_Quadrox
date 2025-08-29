@@ -224,9 +224,7 @@ class QueryController:
         return await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)
     
 
-
-
-
+    
     def _minmax(self, d: Dict[int, float]) -> Dict[int, float]:
         if not d: return {}
         lo, hi = min(d.values()), max(d.values())
@@ -236,6 +234,7 @@ class QueryController:
     async def _probe_ids_scores(
         self, text: str, top_k: int, thr: float
     ) -> Tuple[Dict[int, float], Dict[int, Tuple[int,int,int]]]:
+        # CLIP text -> Milvus COSINE single-vector search (trả id+score)
         emb = self.model_service.embedding(text).tolist()
         res = await self.keyframe_service.search_by_text(
             text_embedding=emb, top_k=top_k, score_threshold=thr
@@ -256,9 +255,10 @@ class QueryController:
         top_k_full: int = 400,
         top_k_each: int = 150,
         alpha: float = 0.6,
-        beta: float = 0.4
+        beta: float = 0.4,
+        gamma: float = 0.0  # motion chưa có thì để 0
     ) -> list[tuple]:
-        # 0) refine để có Q_full
+        # 0) refine để có Q_full (giữ behavior cũ nếu không có LLM)
         refined_query, _ = await self._refine_query(query)
 
         # 1) Q_full
@@ -277,20 +277,21 @@ class QueryController:
         S_full = self._minmax(S_full_raw)
         per_lbl = {lab: self._minmax(d) for lab, d in per_lbl_raw.items()}
 
-        # 4) obj_conf = max trên mọi nhãn
+        # 4) obj_conf = max theo tất cả nhãn T∪C
         obj_conf: Dict[int, float] = defaultdict(float)
         for d in per_lbl.values():
             for k, v in d.items():
                 if v > obj_conf[k]: obj_conf[k] = v
 
-        # 5) Hợp điểm nhẹ
+        # 5) Gộp kênh: merged = α*S_full + β*obj_conf + γ*motion (motion chưa có)
         ids = set(S_full.keys()) | set(obj_conf.keys())
         merged = [(k, alpha*S_full.get(k, 0.0) + beta*obj_conf.get(k, 0.0)) for k in ids]
-        merged.sort(key=lambda x: x[31], reverse=True)
+        merged.sort(key=lambda x: x[1], reverse=True)  # <<< FIX: x[1] là score, không phải x
         final_ids = [k for k, _ in merged[:top_k]]
 
-        # 6) Nạp metadata chỉ cho top_k
+        # 6) Nạp full metadata chỉ cho top_k để tiết kiệm I/O
         keyframes = await self.keyframe_service._retrieve_keyframes_with_metadata(final_ids)
         kmap = {k.key: k for k in keyframes}
         return [(kmap[k], float(s)) for k, s in merged[:top_k] if k in kmap]
+
 

@@ -376,8 +376,6 @@ async def search_keyframes_by_image(
         raise HTTPException(
             status_code=500, detail=f"Error processing image: {str(e)}")
     
-
-    
 # router/keyframe_api.py (thêm)
 from pydantic import BaseModel
 

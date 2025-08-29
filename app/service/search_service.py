@@ -58,8 +58,11 @@ class KeyframeQueryService:
         exclude_indices: list[int] | None = None
     ) -> list[KeyframeServiceReponse]:
 
+        # FIX: Ensure embedding is flat list of floats
+        processed_embedding = self._ensure_flat_embedding(text_embedding)
+
         search_request = MilvusSearchRequest(
-            embedding=text_embedding,
+            embedding=processed_embedding,
             top_k=top_k,
             exclude_ids=exclude_indices
         )
@@ -95,6 +98,41 @@ class KeyframeQueryService:
                     )
                 )
         return response
+
+    def _ensure_flat_embedding(self, embedding) -> list[float]:
+        """Ensure embedding is a flat list of floats"""
+        
+        # Handle numpy arrays
+        if hasattr(embedding, 'ndim'):
+            if embedding.ndim > 1:
+                embedding = embedding.flatten()
+            if hasattr(embedding, 'tolist'):
+                embedding = embedding.tolist()
+        
+        # Handle tensors (PyTorch/TensorFlow)
+        elif hasattr(embedding, 'squeeze') and hasattr(embedding, 'tolist'):
+            embedding = embedding.squeeze().tolist()
+        
+        # Handle nested lists - MAIN FIX
+        elif isinstance(embedding, list):
+            if len(embedding) > 0 and isinstance(embedding[0], list):
+                # Take first row if nested: [[0.1, 0.2, ...]] -> [0.1, 0.2, ...]
+                embedding = embedding[0]
+        
+        # Final validation
+        if not isinstance(embedding, list):
+            raise ValueError(f"Cannot convert embedding to list: {type(embedding)}")
+        
+        if len(embedding) == 0:
+            raise ValueError("Embedding is empty")
+            
+        # Ensure all elements are numbers
+        if not all(isinstance(x, (int, float)) for x in embedding):
+            raise ValueError("Embedding contains non-numeric values")
+        
+        return embedding
+
+
 
     async def _search_keyframes_with_metadata(
         self,
