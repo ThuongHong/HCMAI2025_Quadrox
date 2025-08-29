@@ -2,92 +2,94 @@
 
 A FastAPI-based AI application powered by Milvus for vector search, MongoDB for metadata storage, and MinIO for object storage.
 
-## ✨ Features
-
-### 🔍 Search Capabilities
-
-- **Text Search**: Search keyframes using natural language queries with semantic similarity
-- **Image Search**: Upload images to find visually similar keyframes
-- **Metadata Filtering**: Filter results by video metadata (author, keywords, length, title, description, date)
-- **🎯 Object Detection Filtering**: NEW! Filter keyframes by detected objects with two modes:
-  - **Any mode**: Find keyframes containing at least one of the specified objects
-  - **All mode**: Find keyframes containing all specified objects
-- **Group/Video Filtering**: Include or exclude specific groups and videos
-- **Combined Filtering**: Combine metadata and object filters for precise results
-
-### 🎯 Object Detection Filtering
-
-Filter keyframes by objects detected in the images:
-
-- **Supported Objects**: Cars, people, buildings, skyscrapers, trees, vehicles, and many more
-- **Two Filter Modes**:
-  - `any`: Keyframes containing at least one of the specified objects
-  - `all`: Keyframes containing all of the specified objects
-- **Case-insensitive matching**: "Car", "car", and "CAR" are treated the same
-- **Smart deduplication**: Duplicate objects in the filter list are automatically removed
-- **Performance optimized**: Uses MongoDB indexes for fast object filtering
-- **Combined with metadata**: Use both object and metadata filters simultaneously
-
 ## 🧑‍💻 Getting Started
 
 ### Prerequisites
 
 - Docker
 - Docker Compose
-- Python 3.10
-- uv
+- Python 3.10+
+- uv (Python package manager)
 
 ### 🔧 Local Development
 
-1. Clone the repo and start all services:
+1. **Clone the repository**
 
 ```bash
 git clone https://github.com/ThuongHong/HCMAI2025_Quadrox.git
+cd HCMAI2025_Quadrox
 ```
 
-### 🔧 Local Development
-
-1. Install uv and setup env
+2. **Install dependencies and setup environment**
 
 ```bash
 uv sync
 ```
 
-2. Activate .venv
+3. **Setup environment variables**
 
-```bash
-.venv/Scripts/activate
+Create a `.env` file in the root directory with the following variables:
+
+```env
+MONGO_HOST=localhost
+MONGO_PORT=27017
+MONGO_DB=quadrox
+MONGO_USER=<your_username>
+MONGO_PASSWORD=<your_password>
+MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority&appName=quadrox
+GEMINI_API_KEY=<your_gemini_api_key_here>
 ```
 
-3. Run docker compose
+4. **Activate virtual environment**
+
+```bash
+# Windows
+.venv/Scripts/activate
+
+# Linux/Mac
+source .venv/bin/activate
+```
+
+5. **Start services with Docker**
 
 ```bash
 docker compose up -d
 ```
 
-4. Data Migration
+6. **Run data migration scripts**
+
+Execute the following migration scripts in order:
 
 ```bash
+# Migrate embeddings
 python migration/npy_embedding_migration.py --folder_path resources/embeddings
+
+# Migrate keyframe data
 python migration/keyframe_migration.py --file_path resources/keyframes/id2index.json
+
+# Migrate video metadata
 python migration/metadata_migration.py --folder_path resources/metadata
+
+# Migrate object detection data
 python migration/objects_migration.py --folder_path resources/objects
 ```
 
-5. Run the application
+7. **Run the applications**
 
-Open 2 tabs
+Open two terminal tabs:
 
-5.1. Run the FastAPI application
-
+**Tab 1 - FastAPI Backend:**
 ```bash
 cd app
 python main.py
 ```
 
-5.2. Run the Streamlit application
-
+**Tab 2 - Streamlit Frontend:**
 ```bash
 cd gui
 streamlit run main.py
 ```
+
+## 📝 License
+
+This project is part of the HCMAI2025 competition.
