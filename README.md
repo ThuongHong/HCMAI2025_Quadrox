@@ -33,11 +33,11 @@ Create a `.env` file in the root directory with the following variables:
 ```env
 MONGO_HOST=localhost
 MONGO_PORT=27017
-MONGO_DB=<MONGO_DB>
-MONGO_USER=<your_username>
-MONGO_PASSWORD=<your_password>
-MONGO_URI=<MONGO_URI>
-GEMINI_API_KEY=<your_gemini_api_key_here>
+MONGO_DB=quadrox
+MONGO_USER=
+MONGO_PASSWORD=
+MONGO_URI=mongodb://localhost:27017/quadrox
+GEMINI_API_KEY=<GEMINI_API_KEY>
 ```
 
 4. **Activate virtual environment**
