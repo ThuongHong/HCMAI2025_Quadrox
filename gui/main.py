@@ -478,6 +478,66 @@ with search_tab1:
             help="Choose how to filter your search results"
         )
 
+    # Mode-specific parameters - Initialize first
+    exclude_groups = []
+    include_groups = []
+    include_videos = []
+
+    if search_mode == "Exclude Groups":
+        st.markdown("### 🚫 Exclude Groups")
+        exclude_groups_input = st.text_input(
+            "Group IDs to exclude",
+            placeholder="Enter group IDs separated by commas (e.g., 1, 3, 7)",
+            help="Keyframes from these groups will be excluded from results"
+        )
+
+        # Parse exclude groups
+        if exclude_groups_input.strip():
+            try:
+                exclude_groups = [int(x.strip())
+                                  for x in exclude_groups_input.split(',') if x.strip()]
+                if exclude_groups:
+                    st.success(f"✅ Will exclude groups: {exclude_groups}")
+            except ValueError:
+                st.error("Please enter valid group IDs separated by commas")
+
+    elif search_mode == "Include Groups & Videos":
+        st.markdown("### ✅ Include Groups & Videos")
+
+        col_inc1, col_inc2 = st.columns(2)
+        with col_inc1:
+            include_groups_input = st.text_input(
+                "Group IDs to include",
+                placeholder="e.g., 2, 4, 6",
+                help="Only search within these groups"
+            )
+
+        with col_inc2:
+            include_videos_input = st.text_input(
+                "Video IDs to include",
+                placeholder="e.g., 101, 102, 203",
+                help="Only search within these videos"
+            )
+
+        # Parse include groups and videos
+        if include_groups_input.strip():
+            try:
+                include_groups = [int(x.strip())
+                                  for x in include_groups_input.split(',') if x.strip()]
+                if include_groups:
+                    st.success(f"✅ Will include groups: {include_groups}")
+            except ValueError:
+                st.error("Please enter valid group IDs separated by commas")
+
+        if include_videos_input.strip():
+            try:
+                include_videos = [int(x.strip())
+                                  for x in include_videos_input.split(',') if x.strip()]
+                if include_videos:
+                    st.success(f"✅ Will include videos: {include_videos}")
+            except ValueError:
+                st.error("Please enter valid video IDs separated by commas")
+
 # IMAGE SEARCH TAB
 with search_tab2:
     col1, col2 = st.columns([2, 1])
@@ -512,63 +572,6 @@ with search_tab2:
         - The system will find keyframes that are visually similar
         - Supported formats: PNG, JPG, JPEG, BMP, TIFF, WebP
         """)
-
-        # Image search doesn't use text-based search modes
-        search_mode = "Default"  # Override for image search
-
-# Mode-specific parameters
-if search_mode == "Exclude Groups":
-    st.markdown("### 🚫 Exclude Groups")
-    exclude_groups_input = st.text_input(
-        "Group IDs to exclude",
-        placeholder="Enter group IDs separated by commas (e.g., 1, 3, 7)",
-        help="Keyframes from these groups will be excluded from results"
-    )
-
-    # Parse exclude groups
-    exclude_groups = []
-    if exclude_groups_input.strip():
-        try:
-            exclude_groups = [int(x.strip())
-                              for x in exclude_groups_input.split(',') if x.strip()]
-        except ValueError:
-            st.error("Please enter valid group IDs separated by commas")
-
-elif search_mode == "Include Groups & Videos":
-    st.markdown("### ✅ Include Groups & Videos")
-
-    col_inc1, col_inc2 = st.columns(2)
-    with col_inc1:
-        include_groups_input = st.text_input(
-            "Group IDs to include",
-            placeholder="e.g., 2, 4, 6",
-            help="Only search within these groups"
-        )
-
-    with col_inc2:
-        include_videos_input = st.text_input(
-            "Video IDs to include",
-            placeholder="e.g., 101, 102, 203",
-            help="Only search within these videos"
-        )
-
-    # Parse include groups and videos
-    include_groups = []
-    include_videos = []
-
-    if include_groups_input.strip():
-        try:
-            include_groups = [int(x.strip())
-                              for x in include_groups_input.split(',') if x.strip()]
-        except ValueError:
-            st.error("Please enter valid group IDs separated by commas")
-
-    if include_videos_input.strip():
-        try:
-            include_videos = [int(x.strip())
-                              for x in include_videos_input.split(',') if x.strip()]
-        except ValueError:
-            st.error("Please enter valid video IDs separated by commas")
 
 # Metadata Filter Section (Independent)
 st.markdown("---")
@@ -1040,6 +1043,16 @@ col_search1, col_search2 = st.columns(2)
 
 with col_search1:
     if st.button("🚀 Text Search", use_container_width=True):
+        # Ensure search mode variables exist (defined in Text Search tab)
+        if 'search_mode' not in locals():
+            search_mode = "Default"
+        if 'exclude_groups' not in locals():
+            exclude_groups = []
+        if 'include_groups' not in locals():
+            include_groups = []
+        if 'include_videos' not in locals():
+            include_videos = []
+            
         if not query.strip():
             st.error("Please enter a search query")
         elif len(query) > 1000:
@@ -1052,6 +1065,18 @@ with col_search1:
                     current_threshold = score_threshold if 'score_threshold' in locals(
                     ) else image_score_threshold
 
+                    # Show what search mode is being used
+                    if search_mode == "Exclude Groups" and exclude_groups:
+                        st.info(f"🚫 Excluding groups: {exclude_groups}")
+                    elif search_mode == "Include Groups & Videos":
+                        if include_groups or include_videos:
+                            filter_parts = []
+                            if include_groups:
+                                filter_parts.append(f"groups: {include_groups}")
+                            if include_videos:
+                                filter_parts.append(f"videos: {include_videos}")
+                            st.info(f"✅ Including {', '.join(filter_parts)}")
+
                     # Determine endpoint and base payload based on search mode
                     if search_mode == "Default":
                         endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
@@ -1062,29 +1087,60 @@ with col_search1:
                         }
 
                     elif search_mode == "Exclude Groups":
-                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
-                        payload = {
-                            "query": query,
-                            "top_k": current_top_k,
-                            "score_threshold": current_threshold,
-                            "exclude_groups": exclude_groups
-                        }
+                        if not exclude_groups:
+                            st.warning("⚠️ No groups to exclude specified. Using default search.")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        else:
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "exclude_groups": exclude_groups
+                            }
 
                     else:  # Include Groups & Videos
-                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
-                        payload = {
-                            "query": query,
-                            "top_k": current_top_k,
-                            "score_threshold": current_threshold,
-                            "include_groups": include_groups,
-                            "include_videos": include_videos
-                        }
+                        if not include_groups and not include_videos:
+                            st.warning("⚠️ No groups or videos to include specified. Using default search.")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        else:
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "include_groups": include_groups,
+                                "include_videos": include_videos
+                            }
 
                     # If metadata filter or object filter is enabled, use metadata-filter endpoint regardless of search mode
                     if (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
                         endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
 
                         filter_info = []
+                        
+                        # Add search mode filters to the payload
+                        if search_mode == "Exclude Groups" and exclude_groups:
+                            payload["exclude_groups"] = exclude_groups
+                            filter_info.append(f"exclude groups: {exclude_groups}")
+                        elif search_mode == "Include Groups & Videos":
+                            if include_groups:
+                                payload["include_groups"] = include_groups
+                                filter_info.append(f"include groups: {include_groups}")
+                            if include_videos:
+                                payload["include_videos"] = include_videos
+                                filter_info.append(f"include videos: {include_videos}")
+
                         if metadata_filter:
                             payload["metadata_filter"] = metadata_filter
                             filter_info.append(
@@ -1101,6 +1157,10 @@ with col_search1:
 
                         st.info(
                             f"🎯 Applying filters: {' | '.join(filter_info)}")
+
+                    # Show the final endpoint being used
+                    endpoint_display = endpoint.split('/')[-1]  # Just show the last part
+                    st.info(f"🔗 Using endpoint: {endpoint_display}")
 
                     response = requests.post(
                         endpoint,
