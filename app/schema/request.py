@@ -54,6 +54,9 @@ class MetadataFilter(BaseModel):
     keywords: Optional[List[str]] = Field(
         None, description="Filter by keywords that must be present in video keywords"
     )
+    keywords_mode: Optional[Literal["any", "all"]] = Field(
+        "any", description="Keyword matching mode: 'any' for at least one, 'all' for all keywords"
+    )
     min_length: Optional[int] = Field(
         None, ge=0, description="Minimum video length in seconds"
     )
@@ -67,10 +70,22 @@ class MetadataFilter(BaseModel):
         None, description="Filter videos published until this date (DD/MM/YYYY format)"
     )
     title_contains: Optional[str] = Field(
-        None, description="Filter by title containing specific text"
+        None, description="Filter by title containing specific text (deprecated, use title_terms)"
+    )
+    title_terms: Optional[List[str]] = Field(
+        None, description="Filter by title containing specific terms"
+    )
+    title_mode: Optional[Literal["any", "all"]] = Field(
+        "any", description="Title matching mode: 'any' for at least one term, 'all' for all terms"
     )
     description_contains: Optional[str] = Field(
-        None, description="Filter by description containing specific text"
+        None, description="Filter by description containing specific text (deprecated, use description_terms)"
+    )
+    description_terms: Optional[List[str]] = Field(
+        None, description="Filter by description containing specific terms"
+    )
+    description_mode: Optional[Literal["any", "all"]] = Field(
+        "any", description="Description matching mode: 'any' for at least one term, 'all' for all terms"
     )
 
 

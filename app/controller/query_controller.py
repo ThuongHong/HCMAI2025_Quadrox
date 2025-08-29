@@ -163,14 +163,24 @@ class QueryController:
                 metadata_dict["authors"] = metadata_filter.authors
             if metadata_filter.keywords:
                 metadata_dict["keywords"] = metadata_filter.keywords
+            if metadata_filter.keywords_mode:
+                metadata_dict["keywords_mode"] = metadata_filter.keywords_mode
             if metadata_filter.min_length is not None:
                 metadata_dict["min_length"] = metadata_filter.min_length
             if metadata_filter.max_length is not None:
                 metadata_dict["max_length"] = metadata_filter.max_length
             if metadata_filter.title_contains:
                 metadata_dict["title_contains"] = metadata_filter.title_contains
+            if metadata_filter.title_terms:
+                metadata_dict["title_terms"] = metadata_filter.title_terms
+            if metadata_filter.title_mode:
+                metadata_dict["title_mode"] = metadata_filter.title_mode
             if metadata_filter.description_contains:
                 metadata_dict["description_contains"] = metadata_filter.description_contains
+            if metadata_filter.description_terms:
+                metadata_dict["description_terms"] = metadata_filter.description_terms
+            if metadata_filter.description_mode:
+                metadata_dict["description_mode"] = metadata_filter.description_mode
             if metadata_filter.date_from:
                 metadata_dict["date_from"] = metadata_filter.date_from
             if metadata_filter.date_to:

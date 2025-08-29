@@ -96,12 +96,21 @@ class KeyframeRepository(MongoBaseRepository[Keyframe]):
                     and_conditions.append({"$or": author_conditions})
 
                 if metadata_filter.get("keywords"):
-                    # Case-insensitive keyword matching - any keyword in array contains search term
+                    keywords = metadata_filter["keywords"]
+                    keywords_mode = metadata_filter.get("keywords_mode", "any")
+                    
                     keyword_conditions = []
-                    for keyword in metadata_filter["keywords"]:
+                    for keyword in keywords:
                         keyword_conditions.append(
-                            {"keywords": {"$elemMatch": {"$regex": keyword, "$options": "i"}}})
-                    and_conditions.append({"$or": keyword_conditions})
+                            {"keywords": {"$elemMatch": {"$regex": keyword, "$options": "i"}}}
+                        )
+                    
+                    if keywords_mode == "all":
+                        # All keywords must be present
+                        and_conditions.extend(keyword_conditions)
+                    else:
+                        # At least one keyword must be present
+                        and_conditions.append({"$or": keyword_conditions})
 
                 if metadata_filter.get("min_length") is not None:
                     and_conditions.append(
@@ -111,11 +120,49 @@ class KeyframeRepository(MongoBaseRepository[Keyframe]):
                     and_conditions.append(
                         {"length": {"$lte": metadata_filter["max_length"]}})
 
-                if metadata_filter.get("title_contains"):
+                # Title filtering - prioritize new format over old format
+                if metadata_filter.get("title_terms"):
+                    title_terms = metadata_filter["title_terms"]
+                    title_mode = metadata_filter.get("title_mode", "any")
+                    
+                    title_conditions = []
+                    for term in title_terms:
+                        title_conditions.append(
+                            {"title": {"$regex": term, "$options": "i"}}
+                        )
+                    
+                    if title_mode == "all":
+                        # All terms must be present
+                        and_conditions.extend(title_conditions)
+                    else:
+                        # At least one term must be present
+                        and_conditions.append({"$or": title_conditions})
+                        
+                elif metadata_filter.get("title_contains"):
+                    # Fallback for old format when title_terms is not available
                     and_conditions.append(
                         {"title": {"$regex": metadata_filter["title_contains"], "$options": "i"}})
 
-                if metadata_filter.get("description_contains"):
+                # Description filtering with terms and mode support
+                if metadata_filter.get("description_terms"):
+                    description_terms = metadata_filter["description_terms"]
+                    description_mode = metadata_filter.get("description_mode", "any")
+                    
+                    desc_conditions = []
+                    for term in description_terms:
+                        desc_conditions.append(
+                            {"description": {"$regex": term, "$options": "i"}}
+                        )
+                    
+                    if description_mode == "all":
+                        # All terms must be present
+                        and_conditions.extend(desc_conditions)
+                    else:
+                        # At least one term must be present
+                        and_conditions.append({"$or": desc_conditions})
+                        
+                elif metadata_filter.get("description_contains"):
+                    # Fallback for old format
                     and_conditions.append({"description": {
                                           "$regex": metadata_filter["description_contains"], "$options": "i"}})
 

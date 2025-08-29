@@ -62,6 +62,36 @@ def load_available_objects():
         'metadata': {'source': 'fallback_coco_objects'}
     }
 
+
+@st.cache_data
+def load_available_keywords():
+    """Load available keywords from metadata JSON files"""
+    keywords_set = set()
+    try:
+        # Try both relative paths
+        metadata_dirs = [
+            Path("../resources/metadata"),
+            Path("resources/metadata")
+        ]
+        
+        for metadata_dir in metadata_dirs:
+            if metadata_dir.exists():
+                for json_file in metadata_dir.glob("*.json"):
+                    try:
+                        with open(json_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            if 'keywords' in data and isinstance(data['keywords'], list):
+                                keywords_set.update(data['keywords'])
+                    except Exception as e:
+                        continue  # Skip files that can't be parsed
+                break  # Use the first directory that exists
+                
+    except Exception as e:
+        st.warning(f"Could not load keywords from metadata files: {e}")
+    
+    return sorted(list(keywords_set))  # Return sorted list
+
+
 # Functions
 
 
@@ -578,6 +608,9 @@ st.markdown("---")
 st.markdown("### 🏷️ Metadata Filters")
 st.markdown("Apply additional filters based on video metadata")
 
+# Load available keywords once at the top
+available_keywords = load_available_keywords()
+
 with st.expander("🔍 Metadata Filters", expanded=False):
     col_meta1, col_meta2 = st.columns(2)
 
@@ -593,12 +626,61 @@ with st.expander("🔍 Metadata Filters", expanded=False):
 
         # Keywords filter
         st.markdown("**🏷️ Keywords**")
-        keywords_input = st.text_input(
-            "Filter by keywords",
-            placeholder="e.g., tin tuc, HTV, 60 giay",
-            help="Enter keywords separated by commas - uses contains matching",
-            key="keywords_filter"
+        
+        # Keywords selection method
+        keywords_method = st.radio(
+            "Select keywords method:",
+            ["🔍 Search & Select", "📝 Manual Input"],
+            horizontal=True,
+            key="keywords_method"
         )
+        
+        selected_keywords = []
+        if keywords_method == "🔍 Search & Select" and available_keywords:
+            # Search keywords
+            keyword_search = st.text_input(
+                "🔍 Search keywords:",
+                placeholder="Type to filter available keywords",
+                key="keyword_search"
+            )
+            
+            # Filter keywords based on search
+            if keyword_search:
+                filtered_keywords = [k for k in available_keywords if keyword_search.lower() in k.lower()]
+                display_keywords = filtered_keywords[:20]  # Limit to 20 for performance
+            else:
+                display_keywords = available_keywords  # Show all by default
+
+            selected_keywords = st.multiselect(
+                "Select keywords:",
+                options=display_keywords,
+                help="Choose from detected keywords in metadata",
+                key="keywords_multiselect"
+            )
+            
+            # if len(available_keywords) > 20:
+            #     st.caption(f"📊 Showing {len(display_keywords)} of {len(available_keywords)} keywords. Use search to find more.")
+                
+        else:
+            # Manual input fallback
+            keywords_input = st.text_input(
+                "Manual keyword input",
+                placeholder="e.g., tin tuc, HTV, 60 giay",
+                help="Enter keywords separated by commas",
+                key="keywords_manual"
+            )
+            if keywords_input.strip():
+                selected_keywords = [k.strip() for k in keywords_input.split(',') if k.strip()]
+        
+        # Keywords mode
+        if selected_keywords:
+            keywords_mode = st.radio(
+                "Keywords matching mode:",
+                ["any", "all"],
+                help="'any': match videos with at least one keyword, 'all': match videos with all keywords",
+                key="keywords_mode",
+                horizontal=True
+            )
 
         # Length filter
         st.markdown("**⏱️ Video Length (seconds)**")
@@ -613,18 +695,39 @@ with st.expander("🔍 Metadata Filters", expanded=False):
     with col_meta2:
         # Title/Description filter
         st.markdown("**🔍 Text Search in Metadata**")
+        
+        # Title filter with mode
         title_contains = st.text_input(
             "Title contains",
             placeholder="e.g., 60 Giây, tin tức",
-            help="Case-insensitive contains search in titles",
+            help="Enter search terms separated by commas for multiple term search",
             key="title_filter"
         )
-
+        
+        # Always show title mode
+        title_mode = st.radio(
+            "Title matching mode:",
+            ["any", "all"],
+            help="'any': match titles with at least one term, 'all': match titles with all terms",
+            key="title_mode",
+            horizontal=True
+        )
+        
+        # Description filter with mode
         description_contains = st.text_input(
             "Description contains",
             placeholder="Search in descriptions",
-            help="Case-insensitive contains search in descriptions",
+            help="Enter search terms separated by commas for multiple term search",
             key="desc_filter"
+        )
+        
+        # Always show description mode
+        description_mode = st.radio(
+            "Description matching mode:",
+            ["any", "all"],
+            help="'any': match descriptions with at least one term, 'all': match descriptions with all terms",
+            key="description_mode",
+            horizontal=True
         )
 
         # Date filter
@@ -660,9 +763,18 @@ if use_metadata_filter:
         metadata_filter["authors"] = [x.strip()
                                       for x in authors_input.split(',') if x.strip()]
 
-    if keywords_input.strip():
-        metadata_filter["keywords"] = [x.strip()
-                                       for x in keywords_input.split(',') if x.strip()]
+    # Keywords with mode support - get from session state
+    final_keywords = []
+    if 'keywords_multiselect' in st.session_state and st.session_state.keywords_multiselect:
+        final_keywords = st.session_state.keywords_multiselect
+    elif 'keywords_manual' in st.session_state and st.session_state.keywords_manual.strip():
+        final_keywords = [k.strip() for k in st.session_state.keywords_manual.split(',') if k.strip()]
+    
+    if final_keywords:
+        metadata_filter["keywords"] = final_keywords
+        # Only add mode if keywords are selected and mode exists
+        if len(final_keywords) > 1 and 'keywords_mode' in st.session_state:
+            metadata_filter["keywords_mode"] = st.session_state.keywords_mode
 
     if min_length > 0:
         metadata_filter["min_length"] = min_length
@@ -670,11 +782,39 @@ if use_metadata_filter:
     if max_length > 0:
         metadata_filter["max_length"] = max_length
 
+    # Title with mode support
     if title_contains.strip():
-        metadata_filter["title_contains"] = title_contains.strip()
+        # Always send both formats for maximum compatibility
+        metadata_filter["title_contains"] = title_contains.strip()  # Original format
+        
+        # Also send as terms array
+        if ',' in title_contains:
+            title_terms = [x.strip() for x in title_contains.split(',') if x.strip()]
+        else:
+            title_terms = [title_contains.strip()]
+        
+        metadata_filter["title_terms"] = title_terms
+        if 'title_mode' in st.session_state:
+            metadata_filter["title_mode"] = st.session_state.title_mode
+        else:
+            metadata_filter["title_mode"] = "any"
 
+    # Description with mode support  
     if description_contains.strip():
-        metadata_filter["description_contains"] = description_contains.strip()
+        # Always send both formats for maximum compatibility
+        metadata_filter["description_contains"] = description_contains.strip()  # Original format
+        
+        # Also send as terms array
+        if ',' in description_contains:
+            description_terms = [x.strip() for x in description_contains.split(',') if x.strip()]
+        else:
+            description_terms = [description_contains.strip()]
+        
+        metadata_filter["description_terms"] = description_terms
+        if 'description_mode' in st.session_state:
+            metadata_filter["description_mode"] = st.session_state.description_mode
+        else:
+            metadata_filter["description_mode"] = "any"
 
     if date_from is not None:
         # Convert date to DD/MM/YYYY format
