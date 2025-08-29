@@ -33,10 +33,10 @@ Create a `.env` file in the root directory with the following variables:
 ```env
 MONGO_HOST=localhost
 MONGO_PORT=27017
-MONGO_DB=quadrox
+MONGO_DB=<MONGO_DB>
 MONGO_USER=<your_username>
 MONGO_PASSWORD=<your_password>
-MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority&appName=quadrox
+MONGO_URI=<MONGO_URI>
 GEMINI_API_KEY=<your_gemini_api_key_here>
 ```
 
