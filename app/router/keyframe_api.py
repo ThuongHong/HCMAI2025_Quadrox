@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from PIL import Image
 import io
+import json
 
 from schema.request import (
     TextSearchRequest,
@@ -449,6 +450,18 @@ async def search_keyframes_advanced(
     final_top_k: Optional[int] = Query(
         default=None, ge=1, le=1000, description="Final top-K results"),
 
+    # Advanced filtering options
+    metadata_filter: Optional[str] = Query(
+        default=None, description="JSON string containing metadata filters"),
+    object_filter: Optional[str] = Query(
+        default=None, description="JSON string containing object filters"),
+    include_groups: Optional[str] = Query(
+        default=None, description="Comma-separated list of group IDs to include"),
+    include_videos: Optional[str] = Query(
+        default=None, description="Comma-separated list of video IDs to include"),
+    exclude_groups: Optional[str] = Query(
+        default=None, description="Comma-separated list of group IDs to exclude"),
+
     controller: QueryController = Depends(get_query_controller)
 ):
     """
@@ -480,12 +493,91 @@ async def search_keyframes_advanced(
                 detail="When rerank=1 and rerank_mode=custom, at least one rerank method (rr_superglobal, rr_caption, rr_llm) must be enabled. Try: rr_superglobal=1"
             )
 
-    results = await controller.search_text(
-        query=q,
-        top_k=top_k,
-        score_threshold=score_threshold,
-        rerank_params=rerank_params if rerank_params else None
-    )
+    # Parse filters if provided
+    parsed_metadata_filter = None
+    parsed_object_filter = None
+    
+    if metadata_filter:
+        try:
+            parsed_metadata_filter = json.loads(metadata_filter)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid metadata_filter JSON")
+    
+    if object_filter:
+        try:
+            parsed_object_filter = json.loads(object_filter)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid object_filter JSON")
+    
+    # Parse group/video filters
+    parsed_include_groups = []
+    parsed_include_videos = []
+    parsed_exclude_groups = []
+    
+    if include_groups:
+        try:
+            parsed_include_groups = [int(x.strip()) for x in include_groups.split(',') if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid include_groups format")
+    
+    if include_videos:
+        try:
+            parsed_include_videos = [int(x.strip()) for x in include_videos.split(',') if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid include_videos format")
+    
+    if exclude_groups:
+        try:
+            parsed_exclude_groups = [int(x.strip()) for x in exclude_groups.split(',') if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid exclude_groups format")
+
+    # Choose the appropriate search method based on filters provided
+    if parsed_metadata_filter or parsed_object_filter:
+        # Need to convert dict to Pydantic objects for existing controller method
+        from schema.request import MetadataFilter, ObjectFilter
+        
+        metadata_obj = None
+        if parsed_metadata_filter:
+            metadata_obj = MetadataFilter(**parsed_metadata_filter)
+        
+        object_obj = None 
+        if parsed_object_filter:
+            object_obj = ObjectFilter(**parsed_object_filter)
+            
+        results = await controller.search_text_with_metadata_filter(
+            query=q,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            metadata_filter=metadata_obj,
+            object_filter=object_obj,
+            rerank_params=rerank_params if rerank_params else None
+        )
+    elif parsed_exclude_groups:
+        results = await controller.search_text_exclude_groups(
+            query=q,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            exclude_groups=parsed_exclude_groups,
+            rerank_params=rerank_params if rerank_params else None
+        )
+    elif parsed_include_groups or parsed_include_videos:
+        results = await controller.search_text_include_groups_and_videos(
+            query=q,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            include_groups=parsed_include_groups,
+            include_videos=parsed_include_videos,
+            rerank_params=rerank_params if rerank_params else None
+        )
+    else:
+        # Default search
+        results = await controller.search_text(
+            query=q,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            rerank_params=rerank_params if rerank_params else None
+        )
 
     logger.info(f"Found {len(results)} results with advanced reranking")
 
