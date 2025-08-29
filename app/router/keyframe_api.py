@@ -375,3 +375,36 @@ async def search_keyframes_by_image(
         logger.error(f"Error processing image search: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error processing image: {str(e)}")
+    
+
+    
+# router/keyframe_api.py (thêm)
+from pydantic import BaseModel
+
+class TCSearchRequest(BaseModel):
+    query: str
+    top_k: int = 50
+    score_threshold: float = 0.10
+    targets: list[str] | None = None
+    contexts: list[str] | None = None
+
+@router.post(
+    "/search/tc",
+    response_model=KeyframeDisplay,
+    summary="Text search with manual Targets/Contexts (T*)",
+    description="Gather candidates with Q_full + Targets + Contexts, fuse scores, then return top-K with metadata."
+)
+async def search_keyframes_tc(
+    request: TCSearchRequest,
+    controller: QueryController = Depends(get_query_controller)
+):
+    logger.info(f"TC search: query='{request.query}', T={request.targets}, C={request.contexts}")
+    results = await controller.search_text_tc(
+        query=request.query,
+        targets=request.targets or [],
+        contexts=request.contexts or [],
+        top_k=request.top_k,
+        score_threshold=request.score_threshold
+    )
+    display_results = [SingleKeyframeDisplay(**controller.convert_model_to_display(r)) for r in results]
+    return KeyframeDisplay(results=display_results)

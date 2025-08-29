@@ -7,6 +7,8 @@ from pathlib import Path
 import json
 from typing import Optional, Dict, Any
 from PIL import Image
+from typing import List, Dict, Tuple
+from collections import defaultdict
 
 import os
 import sys
@@ -220,3 +222,75 @@ class QueryController:
         translate + enhance
         """
         return await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)
+    
+
+
+
+
+    def _minmax(self, d: Dict[int, float]) -> Dict[int, float]:
+        if not d: return {}
+        lo, hi = min(d.values()), max(d.values())
+        if hi <= lo: return {k: 0.0 for k in d}
+        return {k: (v - lo) / (hi - lo) for k, v in d.items()}
+
+    async def _probe_ids_scores(
+        self, text: str, top_k: int, thr: float
+    ) -> Tuple[Dict[int, float], Dict[int, Tuple[int,int,int]]]:
+        emb = self.model_service.embedding(text).tolist()
+        res = await self.keyframe_service.search_by_text(
+            text_embedding=emb, top_k=top_k, score_threshold=thr
+        )
+        id2s, id2meta = {}, {}
+        for r in res:
+            id2s[r.key] = max(id2s.get(r.key, 0.0), float(r.confidence_score))
+            id2meta[r.key] = (int(r.group_num), int(r.video_num), int(r.keyframe_num))
+        return id2s, id2meta
+
+    async def search_text_tc(
+        self,
+        query: str,
+        targets: List[str] | None,
+        contexts: List[str] | None,
+        top_k: int,
+        score_threshold: float,
+        top_k_full: int = 400,
+        top_k_each: int = 150,
+        alpha: float = 0.6,
+        beta: float = 0.4
+    ) -> list[tuple]:
+        # 0) refine để có Q_full
+        refined_query, _ = await self._refine_query(query)
+
+        # 1) Q_full
+        S_full_raw, id2meta = await self._probe_ids_scores(refined_query, top_k_full, score_threshold)
+
+        # 2) T/C
+        per_lbl_raw: Dict[str, Dict[int,float]] = {}
+        for lab in (targets or []):
+            d, m = await self._probe_ids_scores(lab, top_k_each, score_threshold)
+            per_lbl_raw[lab] = d; id2meta.update(m)
+        for lab in (contexts or []):
+            d, m = await self._probe_ids_scores(lab, top_k_each, score_threshold)
+            per_lbl_raw[lab] = d; id2meta.update(m)
+
+        # 3) Chuẩn hoá từng kênh
+        S_full = self._minmax(S_full_raw)
+        per_lbl = {lab: self._minmax(d) for lab, d in per_lbl_raw.items()}
+
+        # 4) obj_conf = max trên mọi nhãn
+        obj_conf: Dict[int, float] = defaultdict(float)
+        for d in per_lbl.values():
+            for k, v in d.items():
+                if v > obj_conf[k]: obj_conf[k] = v
+
+        # 5) Hợp điểm nhẹ
+        ids = set(S_full.keys()) | set(obj_conf.keys())
+        merged = [(k, alpha*S_full.get(k, 0.0) + beta*obj_conf.get(k, 0.0)) for k in ids]
+        merged.sort(key=lambda x: x[31], reverse=True)
+        final_ids = [k for k, _ in merged[:top_k]]
+
+        # 6) Nạp metadata chỉ cho top_k
+        keyframes = await self.keyframe_service._retrieve_keyframes_with_metadata(final_ids)
+        kmap = {k.key: k for k in keyframes}
+        return [(kmap[k], float(s)) for k, s in merged[:top_k] if k in kmap]
+

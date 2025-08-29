@@ -490,6 +490,18 @@ with search_tab1:
             help="Enter 1-1000 characters describing what you're looking for"
         )
 
+        # Adding T/C (target and context)
+        
+        targets_input = st.text_input(
+            label='Target to find',
+            placeholder="(e.g., 'Bitexco, Landmark 81, ...')",
+        )
+
+        contexts_input = st.text_input(
+            label='Context to refine search',
+            placeholder="(e.g., 'using flycam, on the mountain, at night...')",
+        )
+
         # Search parameters
         col_param1, col_param2 = st.columns(2)
         with col_param1:
@@ -1302,6 +1314,15 @@ with col_search1:
                     endpoint_display = endpoint.split('/')[-1]  # Just show the last part
                     st.info(f"🔗 Using endpoint: {endpoint_display}")
 
+                    targets_raw  = st.session_state.get("targets_input", "") or ""
+                    contexts_raw = st.session_state.get("contexts_input", "") or ""
+                    targets_list  = [x.strip() for x in targets_raw.split(",")  if x.strip()]
+                    contexts_list = [x.strip() for x in contexts_raw.split(",") if x.strip()]
+
+                    if targets_list:
+                        payload["targets"] = targets_list
+                    if contexts_list:
+                        payload["contexts"] = contexts_list
                     response = requests.post(
                         endpoint,
                         json=payload,
