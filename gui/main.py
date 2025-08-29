@@ -2,10 +2,14 @@ import time
 import streamlit as st
 import requests
 import json
-# from typing import List, Optional
-# import pandas as pd
-# import os
+import pandas as pd
+import os
 from pathlib import Path
+from datetime import datetime
+import re
+
+# Default YouTube video ID for fallback
+DEFAULT_YOUTUBE_ID = "dQw4w9WgXcQ"
 
 # Page configuration
 st.set_page_config(
@@ -20,25 +24,232 @@ st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
 
 # Helper Functions
 
+def debug_paths():
+    """Debug function to check current working directory and available paths"""
+    import os
+    current_dir = os.getcwd()
+    st.write(f"**Current working directory:** {current_dir}")
+    
+    # Check for resources directory
+    resources_paths = [
+        Path("../resources"),
+        Path("resources"),
+        Path("d:/Study/HCMAI2025_Quadrox/resources")
+    ]
+    
+    st.write("**Resource directory checks:**")
+    for path in resources_paths:
+        exists = path.exists()
+        st.write(f"- {path}: {'✅ EXISTS' if exists else '❌ NOT FOUND'}")
+        if exists:
+            # Check subdirectories
+            for subdir in ['map-keyframes', 'metadata', 'objects']:
+                subpath = path / subdir
+                st.write(f"  - {subpath}: {'✅' if subpath.exists() else '❌'}")
+    
+    # Test the parsing functions with sample data
+    st.write("**Function testing:**")
+    test_path = "resources/keyframes/L21/L21_V001/002.jpg"
+    video_id, frame_idx = get_frame_info_from_keyframe_path(test_path)
+    
+    if video_id and frame_idx is not None:
+        pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+        if pts_time is not None:
+            st.success("✅ Complete parsing and lookup workflow is working!")
+            st.write(f"Sample: `{video_id}` frame `{frame_idx}` → `{pts_time}s`")
+        else:
+            st.warning("⚠️ pts_time lookup failed")
+    else:
+        st.warning("⚠️ Path parsing failed")
+
+def get_frame_info_from_keyframe_path(keyframe_path):
+    """Extract video ID and frame index from keyframe path"""
+    try:
+        # Path structure: .../keyframes/L21/L21_V001/001.jpg
+        # Extract the path components
+        path_parts = keyframe_path.replace('\\', '/').split('/')
+        
+        # Find the pattern in the path
+        video_id_full = None
+        frame_filename = None
+        
+        for i, part in enumerate(path_parts):
+            # Look for L{batch}_V{video} pattern in directory names
+            if re.match(r'L\d+_V\d+', part):
+                video_id_full = part
+                # The next part should be the filename
+                if i + 1 < len(path_parts):
+                    frame_filename = path_parts[i + 1]
+                break
+        
+        if video_id_full and frame_filename:
+            # Extract frame index from filename (e.g., "001.jpg" -> 1)
+            filename_without_ext = os.path.splitext(frame_filename)[0]
+            try:
+                frame_idx = int(filename_without_ext)  # Convert "001" to 1, "002" to 2, etc.
+                return video_id_full, frame_idx
+            except ValueError:
+                # Fallback: try to extract numbers from filename
+                numbers = re.findall(r'\d+', filename_without_ext)
+                if numbers:
+                    frame_idx = int(numbers[-1])  # Take the last number found
+                    return video_id_full, frame_idx
+        
+        return None, None
+    except Exception as e:
+        return None, None
+
+def get_pts_time_from_frame_idx(video_id, frame_idx):
+    """Get pts_time from frame_idx using map-keyframes CSV"""
+    try:
+        # Try multiple path combinations to find the map file
+        possible_paths = [
+            Path("../resources/map-keyframes") / f"{video_id}.csv",
+            Path("resources/map-keyframes") / f"{video_id}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id}.csv",
+            Path("../resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id.upper()}.csv",
+        ]
+        
+        map_file_path = None
+        for path in possible_paths:
+            if path.exists():
+                map_file_path = path
+                break
+        
+        if map_file_path and map_file_path.exists():
+            df = pd.read_csv(map_file_path)
+            # The frame_idx from our parsing (e.g., 1 from "001.jpg") corresponds to the 'n' column
+            # Find the row where 'n' matches our frame_idx
+            matching_row = df[df['n'] == frame_idx]
+            if not matching_row.empty:
+                return float(matching_row.iloc[0]['pts_time'])
+        
+        return None
+    except Exception as e:
+        return None
+
+def get_youtube_embed_url(pts_time, result_data=None):
+    """Generate YouTube embed URL with start time using result metadata"""
+    youtube_url = None
+    
+    # Get YouTube URL from result metadata
+    if result_data and 'watch_url' in result_data:
+        youtube_url = result_data['watch_url']
+    
+    # Extract video ID from YouTube URL
+    if youtube_url:
+        # Handle different YouTube URL formats
+        if 'youtube.com/watch?v=' in youtube_url:
+            video_id_match = re.search(r'v=([^&]+)', youtube_url)
+            if video_id_match:
+                actual_youtube_id = video_id_match.group(1)
+                return f"https://www.youtube.com/embed/{actual_youtube_id}?start={int(pts_time)}&autoplay=1"
+        elif 'youtu.be/' in youtube_url:
+            video_id_match = re.search(r'youtu\.be/([^?]+)', youtube_url)
+            if video_id_match:
+                actual_youtube_id = video_id_match.group(1)
+                return f"https://www.youtube.com/embed/{actual_youtube_id}?start={int(pts_time)}&autoplay=1"
+    
+    # Fallback to default video if no URL found
+    return f"https://www.youtube.com/embed/{DEFAULT_YOUTUBE_ID}?start={int(pts_time)}&autoplay=1"
+
+def append_to_csv(filename, result_data):
+    """Append a single result to CSV file"""
+    try:
+        # Ensure the filename has .csv extension
+        if not filename.endswith('.csv'):
+            filename += '.csv'
+        
+        # Prepare data row
+        row_data = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'path': result_data.get('path', ''),
+            'score': result_data.get('score', 0),
+            'video_id': result_data.get('video_id', ''),
+            'group_id': result_data.get('group_id', ''),
+            'frame_idx': result_data.get('frame_idx', ''),
+            'pts_time': result_data.get('pts_time', ''),
+            'title': result_data.get('title', ''),
+            'author': result_data.get('author', ''),
+        }
+        
+        # Create DataFrame
+        df = pd.DataFrame([row_data])
+        
+        # Check if file exists to decide header
+        file_exists = os.path.exists(filename)
+        
+        # Append to CSV
+        df.to_csv(filename, mode='a', header=not file_exists, index=False)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error appending to CSV: {e}")
+        return False
+
+def export_all_results_to_csv(filename, results_list):
+    """Export all search results to CSV file"""
+    try:
+        if not filename.endswith('.csv'):
+            filename += '.csv'
+        
+        # Prepare all data
+        all_data = []
+        for i, result in enumerate(results_list):
+            # Extract frame info
+            video_id, frame_idx = get_frame_info_from_keyframe_path(result.get('path', ''))
+            pts_time = None
+            if video_id and frame_idx is not None:
+                pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+            
+            row_data = {
+                'rank': i + 1,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'path': result.get('path', ''),
+                'score': result.get('score', 0),
+                'video_id': result.get('video_id', ''),
+                'group_id': result.get('group_id', ''),
+                'frame_idx': frame_idx,
+                'pts_time': pts_time,
+                'title': result.get('title', ''),
+                'author': result.get('author', ''),
+                'keywords': ', '.join(result.get('keywords', [])) if isinstance(result.get('keywords'), list) else str(result.get('keywords', '')),
+            }
+            all_data.append(row_data)
+        
+        # Create DataFrame and save
+        df = pd.DataFrame(all_data)
+        df.to_csv(filename, index=False)
+        
+        return True, len(all_data)
+    except Exception as e:
+        st.error(f"Error exporting to CSV: {e}")
+        return False, 0
+
 
 @st.cache_data
 def load_available_objects():
     """Load available objects from the migration-generated JSON file"""
     try:
-        # Try to load from the objects directory
-        objects_file = Path("../resources/objects/all_objects_found.json")
-        if not objects_file.exists():
-            # Fallback to relative path
-            objects_file = Path("resources/objects/all_objects_found.json")
-
-        if objects_file.exists():
-            with open(objects_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return {
-                    'objects': data.get('objects', []),
-                    'categories': data.get('objects_by_category', {}),
-                    'metadata': data.get('metadata', {})
-                }
+        # Try multiple possible paths
+        possible_paths = [
+            Path("../resources/objects/all_objects_found.json"),
+            Path("resources/objects/all_objects_found.json"),
+            Path("d:/Study/HCMAI2025_Quadrox/resources/objects/all_objects_found.json")
+        ]
+        
+        for objects_file in possible_paths:
+            if objects_file.exists():
+                with open(objects_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return {
+                        'objects': data.get('objects', []),
+                        'categories': data.get('objects_by_category', {}),
+                        'metadata': data.get('metadata', {})
+                    }
+                break
     except Exception as e:
         st.warning(f"Could not load objects from file: {e}")
 
@@ -68,10 +279,11 @@ def load_available_keywords():
     """Load available keywords from metadata JSON files"""
     keywords_set = set()
     try:
-        # Try both relative paths
+        # Try multiple possible paths
         metadata_dirs = [
             Path("../resources/metadata"),
-            Path("resources/metadata")
+            Path("resources/metadata"),
+            Path("d:/Study/HCMAI2025_Quadrox/resources/metadata")
         ]
         
         for metadata_dir in metadata_dirs:
@@ -93,6 +305,46 @@ def load_available_keywords():
 
 
 # Functions
+
+
+@st.dialog("YouTube Video Player", width="large")
+def show_youtube_video(pts_time, result_data, result_index):
+    """Display YouTube video in dialog with start time"""
+    try:
+        youtube_url = get_youtube_embed_url(pts_time, result_data)
+        video_id = result_data.get('video_id', 'Unknown')
+        watch_url = result_data.get('watch_url', 'Not available')
+        
+        st.markdown(f"### ▶️ Video Player - Result #{result_index + 1}")
+        st.markdown(f"**Start Time:** {pts_time:.1f} seconds")
+        st.markdown(f"**Video ID:** {video_id}")
+        if watch_url != 'Not available':
+            st.markdown(f"**Original URL:** {watch_url}")
+        
+        # Embed YouTube iframe
+        st.markdown(f'''
+        <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000;">
+            <iframe 
+                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+                src="{youtube_url}" 
+                title="YouTube video player" 
+                frameborder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                allowfullscreen>
+            </iframe>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+        st.info("🎬 Video will start automatically at the specified time.")
+        
+        # Show mapping info
+        if 'watch_url' in result_data and result_data['watch_url']:
+            st.success(f"✅ Using actual YouTube URL from metadata")
+        else:
+            st.warning("⚠️ No YouTube URL found in metadata. Using fallback video.")
+        
+    except Exception as e:
+        st.error(f"Could not load video: {str(e)}")
 
 
 @st.dialog("Fullscreen Image Viewer", width="large")
@@ -339,6 +591,26 @@ st.markdown("""
         color: white;
     }
     
+    /* Special styling for YouTube buttons */
+    div[data-testid="column"] .stButton > button[title*="YouTube"] {
+        background: linear-gradient(45deg, #ff0000, #cc0000) !important;
+        color: white !important;
+    }
+    
+    div[data-testid="column"] .stButton > button[title*="YouTube"]:hover {
+        background: linear-gradient(45deg, #cc0000, #990000) !important;
+    }
+    
+    /* Special styling for CSV export buttons */
+    div[data-testid="column"] .stButton > button[title*="CSV"] {
+        background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+        color: white !important;
+    }
+    
+    div[data-testid="column"] .stButton > button[title*="CSV"]:hover {
+        background: linear-gradient(45deg, #1e7e34, #155724) !important;
+    }
+    
     /* Object tag styling */
     .object-tag {
         display: inline-block;
@@ -453,6 +725,8 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'api_base_url' not in st.session_state:
     st.session_state.api_base_url = "http://localhost:8000"
+if 'csv_filename' not in st.session_state:
+    st.session_state.csv_filename = f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
 # Header
 st.markdown("""
@@ -466,13 +740,29 @@ st.markdown("""
 
 # API Configuration
 with st.expander("⚙️ API Configuration", expanded=False):
-    api_url = st.text_input(
-        "API Base URL",
-        value=st.session_state.api_base_url,
-        help="Base URL for the keyframe search API"
-    )
-    if api_url != st.session_state.api_base_url:
-        st.session_state.api_base_url = api_url
+    col_config1, col_config2 = st.columns(2)
+    
+    with col_config1:
+        api_url = st.text_input(
+            "API Base URL",
+            value=st.session_state.api_base_url,
+            help="Base URL for the keyframe search API"
+        )
+        if api_url != st.session_state.api_base_url:
+            st.session_state.api_base_url = api_url
+    
+    with col_config2:
+        csv_filename = st.text_input(
+            "CSV Export Filename",
+            value=st.session_state.csv_filename,
+            help="Filename for exporting search results to CSV"
+        )
+        if csv_filename != st.session_state.csv_filename:
+            st.session_state.csv_filename = csv_filename
+    
+    # Debug section
+    if st.button("🔧 Debug Paths", help="Check file system paths for troubleshooting"):
+        debug_paths()
 
 # Main search interface
 st.markdown("### 🔍 Search Method")
@@ -1378,8 +1668,51 @@ if st.session_state.search_results:
     else:
         results_list = results_data
 
+    # CSV Export Configuration (before results)
+    with st.expander("💾 CSV Export Settings", expanded=False):
+        col_csv1, col_csv2 = st.columns([2, 1])
+        
+        with col_csv1:
+            new_filename = st.text_input(
+                "📁 CSV Filename",
+                value=st.session_state.csv_filename,
+                help="Filename for exporting search results. Will automatically add .csv extension if not present."
+            )
+            if new_filename != st.session_state.csv_filename:
+                st.session_state.csv_filename = new_filename
+        
+        with col_csv2:
+            st.markdown("**📊 Export Options**")
+            st.markdown("• Individual: Use 'Add to CSV' buttons")
+            st.markdown("• Bulk: Use 'Export All to CSV' button")
+            st.markdown("• Includes: Frame index, PTS time, metadata")
+
+    # YouTube Configuration
+    with st.expander("▶️ YouTube Video Configuration", expanded=False):
+        st.markdown("**📹 Test YouTube Player**")
+        st.markdown("Test the YouTube player with actual metadata URLs from search results.")
+        
+        col_yt1, col_yt2 = st.columns([2, 1])
+        
+        with col_yt1:
+            st.markdown("**Note:** YouTube URLs are automatically extracted from search result metadata.")
+            st.markdown("Each search result contains `watch_url` field with the actual YouTube URL.")
+            
+        with col_yt2:
+            test_pts = st.number_input("Test PTS Time", value=10.0, step=1.0, help="Time in seconds to test")
+            
+        # Show example of how it works
+        if st.button("🧪 Test with Sample Data", help="Test the YouTube player with sample metadata"):
+            sample_result = {
+                'video_id': 'L21_V001',
+                'watch_url': 'https://youtube.com/watch?v=Rzpw5WR7nAY',
+                'title': '60 Giây Sáng - Ngày 01082024 - HTV Tin Tức Mới Nhất 2024',
+                'author': '60 Giây Official'
+            }
+            show_youtube_video(test_pts, sample_result, 0)
+
     # Results summary
-    col_metric1, col_metric2, col_metric3 = st.columns(3)
+    col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
 
     with col_metric1:
         st.metric("Total Results", len(results_list))
@@ -1398,6 +1731,18 @@ if st.session_state.search_results:
             st.metric("Best Score", f"{max_score:.3f}")
         else:
             st.metric("Best Score", "N/A")
+    
+    with col_metric4:
+        # Export all results button
+        if st.button("📤 Export All to CSV", help=f"Export all {len(results_list)} results to {st.session_state.csv_filename}", use_container_width=True):
+            if results_list:
+                success, count = export_all_results_to_csv(st.session_state.csv_filename, results_list)
+                if success:
+                    st.success(f"✅ Exported {count} results to {st.session_state.csv_filename}")
+                else:
+                    st.error("❌ Failed to export results")
+            else:
+                st.warning("⚠️ No results to export")
 
     # Sort by score (highest first)
     sorted_results = []
@@ -1407,12 +1752,22 @@ if st.session_state.search_results:
 
     # Display results in a grid
     for i, result in enumerate(sorted_results):
+        # Extract frame info for each result
+        video_id, frame_idx = get_frame_info_from_keyframe_path(result.get('path', ''))
+        pts_time = None
+        if video_id and frame_idx is not None:
+            pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+        
+        # Add extracted info to result for display and CSV export
+        result['frame_idx'] = frame_idx
+        result['pts_time'] = pts_time
+        
         with st.container():
             col_img, col_info = st.columns([1, 3])
 
             with col_img:
                 try:
-                    # Create button layout with better styling
+                    # Enhanced button layout
                     col_btn1, col_btn2 = st.columns(2)
 
                     with col_btn1:
@@ -1425,6 +1780,25 @@ if st.session_state.search_results:
                         # View metadata details only
                         if st.button(f"📋 Detail", key=f"detail_{i}", help="View detailed metadata", type="secondary", use_container_width=True):
                             show_metadata_only(result, i)
+
+                    # New buttons row for YouTube and CSV export
+                    col_btn3, col_btn4 = st.columns(2)
+                    
+                    with col_btn3:
+                        # YouTube button (only show if we have pts_time)
+                        if pts_time is not None:
+                            if st.button(f"▶️ YouTube", key=f"youtube_{i}", help=f"Open YouTube at {pts_time:.1f}s", use_container_width=True):
+                                show_youtube_video(pts_time, result, i)
+                        else:
+                            st.button(f"▶️ YouTube", key=f"youtube_{i}", help="pts_time not available", disabled=True, use_container_width=True)
+                    
+                    with col_btn4:
+                        # Append to CSV button
+                        if st.button(f"💾 Add to CSV", key=f"csv_{i}", help=f"Add this result to {st.session_state.csv_filename}", use_container_width=True):
+                            if append_to_csv(st.session_state.csv_filename, result):
+                                st.success(f"✅ Added to {st.session_state.csv_filename}")
+                            else:
+                                st.error("❌ Failed to add to CSV")
 
                     # Show thumbnail image
                     st.image(result['path'], width=300,
@@ -1467,6 +1841,22 @@ if st.session_state.search_results:
                     metadata_parts.append(
                         f"<strong>📁 Group ID:</strong> {result['group_id']}")
 
+                # NEW: Show frame_idx information
+                if frame_idx is not None:
+                    metadata_parts.append(
+                        f"<strong>🎬 Frame Index:</strong> {frame_idx}")
+                else:
+                    metadata_parts.append(
+                        f"<strong>🎬 Frame Index:</strong> <em>Unable to parse</em>")
+
+                # NEW: Show pts_time information
+                if pts_time is not None:
+                    metadata_parts.append(
+                        f"<strong>⏱️ PTS Time:</strong> {pts_time:.1f}s")
+                else:
+                    metadata_parts.append(
+                        f"<strong>⏱️ PTS Time:</strong> <em>Not available</em>")
+
                 # Check if result has extended metadata attributes
                 if 'author' in result and result['author']:
                     metadata_parts.append(
@@ -1485,10 +1875,6 @@ if st.session_state.search_results:
                     metadata_parts.append(
                         f"<strong>⏱️ Length:</strong> {minutes}:{seconds:02d}")
 
-                # if 'description' in result and result['description']:
-                #     description = result['description'][:100] + "..." if len(result['description']) > 100 else result['description']
-                #     metadata_parts.append(f"<strong>📝 Description:</strong> {description}")
-
                 if 'keywords' in result and result['keywords']:
                     keywords = result['keywords']
                     if isinstance(keywords, list):
@@ -1502,6 +1888,17 @@ if st.session_state.search_results:
                 if 'publish_date' in result and result['publish_date']:
                     metadata_parts.append(
                         f"<strong>📅 Published:</strong> {result['publish_date']}")
+
+                # Show YouTube URL if available
+                if 'watch_url' in result and result['watch_url']:
+                    watch_url = result['watch_url']
+                    # Shorten URL for display
+                    if len(watch_url) > 50:
+                        display_url = watch_url[:47] + "..."
+                    else:
+                        display_url = watch_url
+                    metadata_parts.append(
+                        f"<strong>🔗 YouTube:</strong> <a href='{watch_url}' target='_blank'>{display_url}</a>")
 
                 # Show detected objects if available
                 if 'objects' in result and result['objects']:
