@@ -68,10 +68,17 @@ async def search_keyframes(
     logger.info(
         f"Text search: '{request.query}' | top_k={request.top_k}, threshold={request.score_threshold}")
 
+    # Extract rerank parameters from request
+    rerank_params = {}
+    for field, value in request.dict().items():
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+            rerank_params[field] = value
+
     results = await controller.search_text(
         query=request.query,
         top_k=request.top_k,
-        score_threshold=request.score_threshold
+        score_threshold=request.score_threshold,
+        rerank_params=rerank_params if rerank_params else None
     )
 
     logger.info(f"Found {len(results)} results")
@@ -126,11 +133,18 @@ async def search_keyframes_exclude_groups(
     logger.info(
         f"Text search with group exclusion: query='{request.query}', exclude_groups={request.exclude_groups}")
 
+    # Extract rerank parameters from request
+    rerank_params = {}
+    for field, value in request.dict().items():
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+            rerank_params[field] = value
+
     results: list[KeyframeServiceReponse] = await controller.search_text_with_exlude_group(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
-        list_group_exlude=request.exclude_groups
+        list_group_exlude=request.exclude_groups,
+        rerank_params=rerank_params if rerank_params else None
     )
 
     logger.info(
@@ -194,12 +208,19 @@ async def search_keyframes_selected_groups_videos(
     logger.info(
         f"Text search with selection: query='{request.query}', include_groups={request.include_groups}, include_videos={request.include_videos}")
 
+    # Extract rerank parameters from request
+    rerank_params = {}
+    for field, value in request.dict().items():
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+            rerank_params[field] = value
+
     results = await controller.search_with_selected_video_group(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
         list_of_include_groups=request.include_groups,
-        list_of_include_videos=request.include_videos
+        list_of_include_videos=request.include_videos,
+        rerank_params=rerank_params if rerank_params else None
     )
 
     logger.info(f"Found {len(results)} results within selected groups/videos")
@@ -285,12 +306,19 @@ async def search_keyframes_with_metadata_filter(
     logger.info(
         f"Advanced search: query='{request.query}', filters=[{', '.join(filter_info)}]")
 
+    # Extract rerank parameters from request
+    rerank_params = {}
+    for field, value in request.dict().items():
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+            rerank_params[field] = value
+
     results = await controller.search_text_with_metadata_filter(
         query=request.query,
         top_k=request.top_k,
         score_threshold=request.score_threshold,
         metadata_filter=request.metadata_filter,
-        object_filter=request.object_filter
+        object_filter=request.object_filter,
+        rerank_params=rerank_params if rerank_params else None
     )
 
     logger.info(f"Found {len(results)} results with advanced filtering")
@@ -328,6 +356,146 @@ async def search_keyframes_with_metadata_filter(
     """,
     response_description="List of matching keyframes with visual similarity scores"
 )
+@router.get(
+    "/search/advanced",
+    response_model=KeyframeDisplay,
+    summary="Advanced text search with reranking options",
+    description="""
+    Perform advanced text-based search for keyframes with comprehensive reranking options.
+    
+    This endpoint provides full control over the multi-stage reranking pipeline including:
+    - **SuperGlobal reranking**: Fast global feature aggregation
+    - **Caption reranking**: Vietnamese caption generation and matching
+    - **LLM reranking**: Direct relevance scoring with multimodal LLM
+    
+    **Rerank Parameters:**
+    - **rerank**: Enable reranking (0=off, 1=on)
+    - **rerank_mode**: "auto" (system decides) or "custom" (manual control)
+    - **rr_superglobal**, **rr_caption**, **rr_llm**: Enable individual methods
+    - **sg_top_m**, **cap_top_t**, **llm_top_t**: Control processing scope
+    - **w_sg**, **w_cap**, **w_llm**: Adjust method weights
+    
+    **Example URLs:**
+    ```
+    # SuperGlobal only (fast)
+    /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=0&rr_llm=0
+    
+    # SuperGlobal + Caption (moderate speed)
+    /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=1&cap_top_t=15
+    
+    # Full pipeline (slower but most accurate)
+    /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=1&rr_llm=1&llm_top_t=3
+    ```
+    """,
+    response_description="List of reranked keyframes with confidence scores"
+)
+async def search_keyframes_advanced(
+    q: str = Query(..., description="Search query text",
+                   min_length=1, max_length=1000),
+    top_k: int = Query(default=10, ge=1, le=500,
+                       description="Number of top results to return"),
+    score_threshold: float = Query(
+        default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold"),
+
+    # Rerank master controls
+    rerank: Optional[int] = Query(
+        default=None, description="Enable reranking (0=off, 1=on)"),
+    rerank_mode: Optional[str] = Query(
+        default=None, description="Reranking mode: auto or custom"),
+
+    # Rerank method switches
+    rr_superglobal: Optional[int] = Query(
+        default=None, description="Enable SuperGlobal rerank (0=off, 1=on)"),
+    rr_caption: Optional[int] = Query(
+        default=None, description="Enable Caption rerank (0=off, 1=on)"),
+    rr_llm: Optional[int] = Query(
+        default=None, description="Enable LLM rerank (0=off, 1=on)"),
+
+    # SuperGlobal parameters
+    sg_top_m: Optional[int] = Query(
+        default=None, ge=1, le=10000, description="SuperGlobal top-M candidates"),
+    sg_qexp_k: Optional[int] = Query(
+        default=None, ge=1, le=100, description="Query expansion K"),
+    sg_img_knn: Optional[int] = Query(
+        default=None, ge=1, le=100, description="Image KNN parameter"),
+    sg_gem_p: Optional[float] = Query(
+        default=None, ge=0.1, le=10.0, description="GeM pooling parameter"),
+    w_sg: Optional[float] = Query(
+        default=None, ge=0.0, le=5.0, description="SuperGlobal weight"),
+
+    # Caption parameters
+    cap_top_t: Optional[int] = Query(
+        default=None, ge=1, le=100, description="Caption rerank top-T"),
+    cap_model: Optional[str] = Query(
+        default=None, description="Caption model name"),
+    cap_max_tokens: Optional[int] = Query(
+        default=None, ge=1, le=512, description="Caption max tokens"),
+    cap_temp: Optional[float] = Query(
+        default=None, ge=0.0, le=2.0, description="Caption temperature"),
+    w_cap: Optional[float] = Query(
+        default=None, ge=0.0, le=5.0, description="Caption weight"),
+
+    # LLM parameters
+    llm_top_t: Optional[int] = Query(
+        default=None, ge=1, le=20, description="LLM rerank top-T"),
+    llm_model: Optional[str] = Query(
+        default=None, description="LLM model name"),
+    llm_timeout: Optional[int] = Query(
+        default=None, ge=1, le=300, description="LLM timeout seconds"),
+    w_llm: Optional[float] = Query(
+        default=None, ge=0.0, le=5.0, description="LLM weight"),
+
+    # Final output
+    final_top_k: Optional[int] = Query(
+        default=None, ge=1, le=1000, description="Final top-K results"),
+
+    controller: QueryController = Depends(get_query_controller)
+):
+    """
+    Advanced search with full reranking control via query parameters.
+    """
+
+    logger.info(f"Advanced search: query='{q}', rerank={rerank}")
+
+    # Build rerank params from query parameters
+    rerank_params = {}
+    local_vars = locals()
+    for param_name in ['rerank', 'rerank_mode', 'rr_superglobal', 'rr_caption', 'rr_llm',
+                       'sg_top_m', 'sg_qexp_k', 'sg_img_knn', 'sg_gem_p', 'w_sg',
+                       'cap_top_t', 'cap_model', 'cap_max_tokens', 'cap_temp', 'w_cap',
+                       'llm_top_t', 'llm_model', 'llm_timeout', 'w_llm', 'final_top_k']:
+        if param_name in local_vars and local_vars[param_name] is not None:
+            rerank_params[param_name] = local_vars[param_name]
+
+    # Validate rerank parameters
+    if rerank_params.get('rerank') == 1 and rerank_params.get('rerank_mode') == 'custom':
+        methods_enabled = any([
+            rerank_params.get('rr_superglobal') == 1,
+            rerank_params.get('rr_caption') == 1,
+            rerank_params.get('rr_llm') == 1
+        ])
+        if not methods_enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="When rerank=1 and rerank_mode=custom, at least one rerank method (rr_superglobal, rr_caption, rr_llm) must be enabled. Try: rr_superglobal=1"
+            )
+
+    results = await controller.search_text(
+        query=q,
+        top_k=top_k,
+        score_threshold=score_threshold,
+        rerank_params=rerank_params if rerank_params else None
+    )
+
+    logger.info(f"Found {len(results)} results with advanced reranking")
+
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
+    return KeyframeDisplay(results=display_results)
+
+
 async def search_keyframes_by_image(
     file: UploadFile = File(...),
     top_k: int = Query(default=10, ge=1, le=500,

@@ -17,8 +17,9 @@ class MongoDBSettings(BaseSettings):
 
 
 class IndexPathSettings(BaseSettings):
-    FAISS_INDEX_PATH: str | None  
+    FAISS_INDEX_PATH: str | None
     USEARCH_INDEX_PATH: str | None
+
 
 class KeyFrameIndexMilvusSetting(BaseSettings):
     COLLECTION_NAME: str = "keyframe_embeddings"
@@ -26,9 +27,67 @@ class KeyFrameIndexMilvusSetting(BaseSettings):
     PORT: str = '19530'
     METRIC_TYPE: str = 'COSINE'
     INDEX_TYPE: str = 'FLAT'
-    BATCH_SIZE: int =10000
+    BATCH_SIZE: int = 10000
     SEARCH_PARAMS: dict = {}
-    
+
+
+class RerankSettings(BaseSettings):
+    """Rerank pipeline configuration"""
+    # Master switches
+    RERANK_ENABLE: bool = Field(
+        default=True, description="Master switch for rerank pipeline")
+    RERANK_MODE: str = Field(
+        default="custom", description="Rerank mode: auto or custom")
+
+    # Sub-switches
+    RERANK_ENABLE_SUPERGLOBAL: bool = Field(
+        default=True, description="Enable SuperGlobal rerank")
+    RERANK_ENABLE_CAPTION: bool = Field(
+        default=False, description="Enable Caption rerank")
+    RERANK_ENABLE_LLM: bool = Field(
+        default=False, description="Enable LLM rerank")
+
+    # SuperGlobal parameters
+    RERANK_SG_TOP_M: int = Field(
+        default=500, description="SuperGlobal top-M candidates")
+    RERANK_SG_QEXP_K: int = Field(default=10, description="Query expansion K")
+    RERANK_SG_IMG_KNN: int = Field(
+        default=10, description="Image KNN parameter")
+    RERANK_SG_GEM_P: float = Field(
+        default=3.0, description="Generalized mean pooling parameter")
+    RERANK_SG_SCORE_WEIGHT: float = Field(
+        default=1.0, description="SuperGlobal score weight")
+
+    # Caption parameters
+    RERANK_CAPTION_TOP_T: int = Field(
+        default=20, description="Caption rerank top-T")
+    RERANK_CAPTION_MODEL_NAME: str = Field(
+        default="5CD-AI/Vintern-1B-v2", description="Caption model name")
+    RERANK_CAPTION_MAX_NEW_TOKENS: int = Field(
+        default=64, description="Caption generation max tokens")
+    RERANK_CAPTION_TEMPERATURE: float = Field(
+        default=0.0, description="Caption generation temperature")
+    RERANK_CAPTION_SCORE_WEIGHT: float = Field(
+        default=0.8, description="Caption score weight")
+    RERANK_CAPTION_CACHE_DIR: str = Field(
+        default="./cache/captions", description="Caption cache directory")
+
+    # LLM parameters
+    RERANK_LLM_TOP_T: int = Field(default=5, description="LLM rerank top-T")
+    RERANK_LLM_MODEL_NAME: str = Field(
+        default="5CD-AI/Vintern-1B-v2", description="LLM model name")
+    RERANK_LLM_TIMEOUT_S: int = Field(
+        default=15, description="LLM timeout in seconds")
+    RERANK_LLM_SCORE_WEIGHT: float = Field(
+        default=1.2, description="LLM score weight")
+    RERANK_LLM_CACHE_DIR: str = Field(
+        default="./cache/llm_scores", description="LLM cache directory")
+
+    # Ensemble and output
+    RERANK_FINAL_TOP_K: int = Field(
+        default=100, description="Final top-K results")
+
+
 class AppSettings(BaseSettings):
     # Model
     MODEL_NAME: str = "ViT-B-32"
@@ -36,9 +95,8 @@ class AppSettings(BaseSettings):
     PRETRAINED_NAME: str = "openai"
 
     # Resources
-    DATA_FOLDER: str  = str(REPO_ROOT / 'resources' / 'keyframes')
-    ID2INDEX_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'id2index.json')
+    DATA_FOLDER: str = str(REPO_ROOT / 'resources' / 'keyframes')
+    ID2INDEX_PATH: str = str(REPO_ROOT / 'resources' /
+                             'keyframes' / 'id2index.json')
     # FRAME2OBJECT: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'detections.json')
     # ASR_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'asr_proc.json')
-
-

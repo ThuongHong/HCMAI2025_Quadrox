@@ -1,4 +1,13 @@
 
+from dotenv import load_dotenv
+from llama_index.core.llms import LLM
+from controller.agent_controller import AgentController
+from llama_index.llms.google_genai import GoogleGenAI
+from core.logger import SimpleLogger
+from factory.factory import ServiceFactory
+from core.settings import KeyFrameIndexMilvusSetting, MongoDBSettings, AppSettings, RerankSettings
+from service import ModelService, KeyframeQueryService
+from controller.query_controller import QueryController
 from pathlib import Path
 from fastapi import Depends, Request, HTTPException
 from functools import lru_cache
@@ -15,21 +24,9 @@ ROOT_DIR = os.path.abspath(
 sys.path.insert(0, ROOT_DIR)
 
 
-from controller.query_controller import QueryController
-from service import ModelService, KeyframeQueryService
-from core.settings import KeyFrameIndexMilvusSetting, MongoDBSettings, AppSettings
-from factory.factory import ServiceFactory
-from core.logger import SimpleLogger
-
-from llama_index.llms.google_genai import GoogleGenAI
-from controller.agent_controller import AgentController
-from llama_index.core.llms import LLM
-
 logger = SimpleLogger(__name__)
 
-from dotenv import load_dotenv
 load_dotenv()
-
 
 
 @lru_cache
@@ -58,6 +55,11 @@ def get_mongo_settings():
     return MongoDBSettings()
 
 
+@lru_cache()
+def get_rerank_settings():
+    """Get Rerank settings (cached)"""
+    return RerankSettings()
+
 
 def get_service_factory(request: Request) -> ServiceFactory:
     """Get ServiceFactory from app state"""
@@ -65,15 +67,14 @@ def get_service_factory(request: Request) -> ServiceFactory:
     if service_factory is None:
         logger.error("ServiceFactory not found in app state")
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="Service factory not initialized. Please check application startup."
         )
     return service_factory
 
 
-
 def get_agent_controller(
-    service_factory = Depends(get_service_factory),
+    service_factory=Depends(get_service_factory),
     app_settings: AppSettings = Depends(get_app_settings)
 ) -> AgentController:
     llm = get_llm()
@@ -95,8 +96,6 @@ def get_agent_controller(
     )
 
 
-
-
 def get_model_service(service_factory: ServiceFactory = Depends(get_service_factory)) -> ModelService:
     try:
         model_service = service_factory.get_model_service()
@@ -113,7 +112,7 @@ def get_model_service(service_factory: ServiceFactory = Depends(get_service_fact
             status_code=503,
             detail=f"Model service initialization failed: {str(e)}"
         )
-    
+
 
 def get_keyframe_service(service_factory: ServiceFactory = Depends(get_service_factory)) -> KeyframeQueryService:
     """Get keyframe query service from ServiceFactory"""
@@ -134,7 +133,6 @@ def get_keyframe_service(service_factory: ServiceFactory = Depends(get_service_f
         )
 
 
-
 def get_mongo_client(request: Request):
     """Get MongoDB client from app state"""
     mongo_client = getattr(request.app.state, 'mongo_client', None)
@@ -146,6 +144,7 @@ def get_mongo_client(request: Request):
         )
     return mongo_client
 
+
 async def check_mongodb_health(request: Request) -> bool:
     """Check MongoDB connection health"""
     try:
@@ -155,7 +154,6 @@ async def check_mongodb_health(request: Request) -> bool:
     except Exception as e:
         logger.error(f"MongoDB health check failed: {str(e)}")
         return False
-
 
 
 def get_milvus_repository(service_factory: ServiceFactory = Depends(get_service_factory)):
@@ -179,36 +177,38 @@ def get_milvus_repository(service_factory: ServiceFactory = Depends(get_service_
 def get_query_controller(
     model_service: ModelService = Depends(get_model_service),
     keyframe_service: KeyframeQueryService = Depends(get_keyframe_service),
-    app_settings: AppSettings = Depends(get_app_settings)
+    app_settings: AppSettings = Depends(get_app_settings),
+    rerank_settings: RerankSettings = Depends(get_rerank_settings)
 ) -> QueryController:
     """Get query controller instance"""
     try:
         logger.info("Creating query controller...")
-        
+
         data_folder = Path(app_settings.DATA_FOLDER)
         id2index_path = Path(app_settings.ID2INDEX_PATH)
-        
+
         if not data_folder.exists():
             logger.warning(f"Data folder does not exist: {data_folder}")
             data_folder.mkdir(parents=True, exist_ok=True)
-            
+
         if not id2index_path.exists():
             logger.warning(f"ID2Index file does not exist: {id2index_path}")
             id2index_path.parent.mkdir(parents=True, exist_ok=True)
             with open(id2index_path, 'w') as f:
                 json.dump({}, f)
-        
+
         controller = QueryController(
             data_folder=data_folder,
             id2index_path=id2index_path,
             model_service=model_service,
             keyframe_service=keyframe_service,
-            llm=get_llm()
+            llm=get_llm(),
+            rerank_config=rerank_settings
         )
-        
+
         logger.info("Query controller created successfully")
         return controller
-        
+
     except Exception as e:
         logger.error(f"Failed to create query controller: {str(e)}")
         raise HTTPException(

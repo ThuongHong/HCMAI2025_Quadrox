@@ -73,7 +73,7 @@ def load_available_keywords():
             Path("../resources/metadata"),
             Path("resources/metadata")
         ]
-        
+
         for metadata_dir in metadata_dirs:
             if metadata_dir.exists():
                 for json_file in metadata_dir.glob("*.json"):
@@ -85,10 +85,10 @@ def load_available_keywords():
                     except Exception as e:
                         continue  # Skip files that can't be parsed
                 break  # Use the first directory that exists
-                
+
     except Exception as e:
         st.warning(f"Could not load keywords from metadata files: {e}")
-    
+
     return sorted(list(keywords_set))  # Return sorted list
 
 
@@ -626,7 +626,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
 
         # Keywords filter
         st.markdown("**🏷️ Keywords**")
-        
+
         # Keywords selection method
         keywords_method = st.radio(
             "Select keywords method:",
@@ -634,7 +634,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             horizontal=True,
             key="keywords_method"
         )
-        
+
         selected_keywords = []
         if keywords_method == "🔍 Search & Select" and available_keywords:
             # Search keywords
@@ -643,11 +643,13 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 placeholder="Type to filter available keywords",
                 key="keyword_search"
             )
-            
+
             # Filter keywords based on search
             if keyword_search:
-                filtered_keywords = [k for k in available_keywords if keyword_search.lower() in k.lower()]
-                display_keywords = filtered_keywords[:20]  # Limit to 20 for performance
+                filtered_keywords = [
+                    k for k in available_keywords if keyword_search.lower() in k.lower()]
+                # Limit to 20 for performance
+                display_keywords = filtered_keywords[:20]
             else:
                 display_keywords = available_keywords  # Show all by default
 
@@ -657,10 +659,10 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 help="Choose from detected keywords in metadata",
                 key="keywords_multiselect"
             )
-            
+
             # if len(available_keywords) > 20:
             #     st.caption(f"📊 Showing {len(display_keywords)} of {len(available_keywords)} keywords. Use search to find more.")
-                
+
         else:
             # Manual input fallback
             keywords_input = st.text_input(
@@ -670,8 +672,9 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 key="keywords_manual"
             )
             if keywords_input.strip():
-                selected_keywords = [k.strip() for k in keywords_input.split(',') if k.strip()]
-        
+                selected_keywords = [
+                    k.strip() for k in keywords_input.split(',') if k.strip()]
+
         # Keywords mode
         if selected_keywords:
             keywords_mode = st.radio(
@@ -695,7 +698,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
     with col_meta2:
         # Title/Description filter
         st.markdown("**🔍 Text Search in Metadata**")
-        
+
         # Title filter with mode
         title_contains = st.text_input(
             "Title contains",
@@ -703,7 +706,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             help="Enter search terms separated by commas for multiple term search",
             key="title_filter"
         )
-        
+
         # Always show title mode
         title_mode = st.radio(
             "Title matching mode:",
@@ -712,7 +715,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             key="title_mode",
             horizontal=True
         )
-        
+
         # Description filter with mode
         description_contains = st.text_input(
             "Description contains",
@@ -720,7 +723,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             help="Enter search terms separated by commas for multiple term search",
             key="desc_filter"
         )
-        
+
         # Always show description mode
         description_mode = st.radio(
             "Description matching mode:",
@@ -768,8 +771,9 @@ if use_metadata_filter:
     if 'keywords_multiselect' in st.session_state and st.session_state.keywords_multiselect:
         final_keywords = st.session_state.keywords_multiselect
     elif 'keywords_manual' in st.session_state and st.session_state.keywords_manual.strip():
-        final_keywords = [k.strip() for k in st.session_state.keywords_manual.split(',') if k.strip()]
-    
+        final_keywords = [
+            k.strip() for k in st.session_state.keywords_manual.split(',') if k.strip()]
+
     if final_keywords:
         metadata_filter["keywords"] = final_keywords
         # Only add mode if keywords are selected and mode exists
@@ -785,31 +789,35 @@ if use_metadata_filter:
     # Title with mode support
     if title_contains.strip():
         # Always send both formats for maximum compatibility
-        metadata_filter["title_contains"] = title_contains.strip()  # Original format
-        
+        # Original format
+        metadata_filter["title_contains"] = title_contains.strip()
+
         # Also send as terms array
         if ',' in title_contains:
-            title_terms = [x.strip() for x in title_contains.split(',') if x.strip()]
+            title_terms = [x.strip()
+                           for x in title_contains.split(',') if x.strip()]
         else:
             title_terms = [title_contains.strip()]
-        
+
         metadata_filter["title_terms"] = title_terms
         if 'title_mode' in st.session_state:
             metadata_filter["title_mode"] = st.session_state.title_mode
         else:
             metadata_filter["title_mode"] = "any"
 
-    # Description with mode support  
+    # Description with mode support
     if description_contains.strip():
         # Always send both formats for maximum compatibility
-        metadata_filter["description_contains"] = description_contains.strip()  # Original format
-        
+        # Original format
+        metadata_filter["description_contains"] = description_contains.strip()
+
         # Also send as terms array
         if ',' in description_contains:
-            description_terms = [x.strip() for x in description_contains.split(',') if x.strip()]
+            description_terms = [
+                x.strip() for x in description_contains.split(',') if x.strip()]
         else:
             description_terms = [description_contains.strip()]
-        
+
         metadata_filter["description_terms"] = description_terms
         if 'description_mode' in st.session_state:
             metadata_filter["description_mode"] = st.session_state.description_mode
@@ -823,6 +831,131 @@ if use_metadata_filter:
     if date_to is not None:
         # Convert date to DD/MM/YYYY format
         metadata_filter["date_to"] = date_to.strftime("%d/%m/%Y")
+
+# Rerank Options Section
+st.markdown("### ⚡ Rerank Options")
+st.markdown("Apply advanced reranking to improve search result quality")
+
+with st.expander("🎯 Multi-Stage Reranking", expanded=False):
+    st.markdown("**✅ Enable Multi-Stage Reranking**")
+
+    # Enable/disable reranking
+    enable_rerank = st.checkbox(
+        "Apply reranking to search results",
+        value=False,
+        help="Apply advanced reranking pipeline (SuperGlobal + Caption + LLM) to improve result quality"
+    )
+
+    if enable_rerank:
+        col_rerank1, col_rerank2 = st.columns(2)
+
+        with col_rerank1:
+            st.markdown("**🎯 SuperGlobal Reranking**")
+            rerank_superglobal_enabled = st.checkbox(
+                "Enable SuperGlobal rerank",
+                value=True,
+                help="Fast reranking using global features"
+            )
+
+            if rerank_superglobal_enabled:
+                rerank_superglobal_weight = st.slider(
+                    "SuperGlobal weight",
+                    min_value=0.0, max_value=1.0, value=0.4, step=0.1,
+                    help="Weight for SuperGlobal similarity scores"
+                )
+                rerank_superglobal_top_t = st.slider(
+                    "SuperGlobal top_t",
+                    min_value=50, max_value=500, value=50, step=25,
+                    help="Number of candidates for SuperGlobal reranking"
+                )
+
+            st.markdown("**🏷️ Caption Reranking**")
+            rerank_caption_enabled = st.checkbox(
+                "Enable Caption rerank",
+                value=True,
+                help="Rerank using Vietnamese image captions"
+            )
+
+            if rerank_caption_enabled:
+                rerank_caption_weight = st.slider(
+                    "Caption weight",
+                    min_value=0.0, max_value=1.0, value=0.4, step=0.1,
+                    help="Weight for caption similarity scores"
+                )
+                rerank_caption_top_t = st.slider(
+                    "Caption top_t",
+                    min_value=10, max_value=100, value=20, step=5,
+                    help="Number of candidates for caption reranking"
+                )
+                rerank_caption_timeout = st.slider(
+                    "Caption timeout (seconds)",
+                    min_value=10, max_value=120, value=30, step=5,
+                    help="Timeout for caption generation"
+                )
+
+        with col_rerank2:
+            st.markdown("**🧠 LLM Reranking**")
+            rerank_llm_enabled = st.checkbox(
+                "Enable LLM rerank",
+                value=False,
+                help="High-quality reranking using Large Language Models"
+            )
+
+            if rerank_llm_enabled:
+                rerank_llm_weight = st.slider(
+                    "LLM weight",
+                    min_value=0.0, max_value=1.0, value=0.2, step=0.1,
+                    help="Weight for LLM similarity scores"
+                )
+                rerank_llm_top_t = st.slider(
+                    "LLM top_t",
+                    min_value=5, max_value=50, value=20, step=5,
+                    help="Number of candidates for LLM reranking"
+                )
+                rerank_llm_timeout = st.slider(
+                    "LLM timeout (seconds)",
+                    min_value=30, max_value=300, value=60, step=10,
+                    help="Timeout for LLM processing"
+                )
+
+            st.markdown("**⚙️ Advanced Settings**")
+            rerank_cache_enabled = st.checkbox(
+                "Enable result caching",
+                value=True,
+                help="Cache reranking results for faster repeated queries"
+            )
+
+            rerank_fallback_enabled = st.checkbox(
+                "Enable graceful fallback",
+                value=True,
+                help="Fallback to simpler methods if advanced reranking fails"
+            )
+
+            st.markdown("**📊 Final Results**")
+            rerank_final_top_k = st.slider(
+                "Final top_k results",
+                min_value=5, max_value=100, value=0, step=5,
+                help="Final number of results after reranking (0 = use original top_k)"
+            )
+
+        # Show rerank configuration summary
+        if any([rerank_superglobal_enabled, rerank_caption_enabled, rerank_llm_enabled]):
+            st.markdown("---")
+            st.markdown("**🎯 Rerank Pipeline Summary:**")
+
+            stages = []
+            if rerank_superglobal_enabled:
+                stages.append(
+                    f"SuperGlobal (weight: {rerank_superglobal_weight}, top_t: {rerank_superglobal_top_t})")
+            if rerank_caption_enabled:
+                stages.append(
+                    f"Caption (weight: {rerank_caption_weight}, top_t: {rerank_caption_top_t})")
+            if rerank_llm_enabled:
+                stages.append(
+                    f"LLM (weight: {rerank_llm_weight}, top_t: {rerank_llm_top_t})")
+
+            for i, stage in enumerate(stages, 1):
+                st.info(f"**Stage {i}:** {stage}")
 
 # Object Filter Section
 st.markdown("### 🎯 Object Filters")
@@ -1182,6 +1315,9 @@ if use_object_filter and selected_objects:
 col_search1, col_search2 = st.columns(2)
 
 with col_search1:
+    pass  # Text Search button moved below
+
+with col_search1:
     if st.button("🚀 Text Search", use_container_width=True):
         # Ensure search mode variables exist (defined in Text Search tab)
         if 'search_mode' not in locals():
@@ -1192,7 +1328,7 @@ with col_search1:
             include_groups = []
         if 'include_videos' not in locals():
             include_videos = []
-            
+
         if not query.strip():
             st.error("Please enter a search query")
         elif len(query) > 1000:
@@ -1202,12 +1338,56 @@ with col_search1:
                 try:
                     # Use text search parameters
                     current_top_k = top_k if 'top_k' in locals() else image_top_k
-                    current_threshold = score_threshold if 'score_threshold' in locals(
-                    ) else image_score_threshold
+                    current_threshold = score_threshold if 'score_threshold' in locals() else image_score_threshold
+
+                    # Check if reranking is enabled to determine endpoint strategy
+                    use_advanced_endpoint = False
+                    rerank_params = {}
+                    
+                    if 'enable_rerank' in locals() and enable_rerank:
+                        use_advanced_endpoint = True
+                        
+                        # SuperGlobal rerank parameters
+                        if 'rerank_superglobal_enabled' in locals() and rerank_superglobal_enabled:
+                            rerank_params["rerank_superglobal_enabled"] = True
+                            if 'rerank_superglobal_weight' in locals():
+                                rerank_params["rerank_superglobal_weight"] = rerank_superglobal_weight
+                            if 'rerank_superglobal_top_t' in locals():
+                                rerank_params["rerank_superglobal_top_t"] = rerank_superglobal_top_t
+
+                        # Caption rerank parameters
+                        if 'rerank_caption_enabled' in locals() and rerank_caption_enabled:
+                            rerank_params["rerank_caption_enabled"] = True
+                            if 'rerank_caption_weight' in locals():
+                                rerank_params["rerank_caption_weight"] = rerank_caption_weight
+                            if 'rerank_caption_top_t' in locals():
+                                rerank_params["rerank_caption_top_t"] = rerank_caption_top_t
+                            if 'rerank_caption_timeout' in locals():
+                                rerank_params["rerank_caption_timeout"] = rerank_caption_timeout
+
+                        # LLM rerank parameters
+                        if 'rerank_llm_enabled' in locals() and rerank_llm_enabled:
+                            rerank_params["rerank_llm_enabled"] = True
+                            if 'rerank_llm_weight' in locals():
+                                rerank_params["rerank_llm_weight"] = rerank_llm_weight
+                            if 'rerank_llm_top_t' in locals():
+                                rerank_params["rerank_llm_top_t"] = rerank_llm_top_t
+                            if 'rerank_llm_timeout' in locals():
+                                rerank_params["rerank_llm_timeout"] = rerank_llm_timeout
+
+                        # Advanced settings
+                        if 'rerank_cache_enabled' in locals():
+                            rerank_params["rerank_cache_enabled"] = rerank_cache_enabled
+                        if 'rerank_fallback_enabled' in locals():
+                            rerank_params["rerank_fallback_enabled"] = rerank_fallback_enabled
+                        if 'rerank_final_top_k' in locals() and rerank_final_top_k > 0:
+                            rerank_params["rerank_final_top_k"] = rerank_final_top_k
 
                     # Show what search mode is being used
+                    search_info_parts = []
+                    
                     if search_mode == "Exclude Groups" and exclude_groups:
-                        st.info(f"🚫 Excluding groups: {exclude_groups}")
+                        search_info_parts.append(f"excluding groups: {exclude_groups}")
                     elif search_mode == "Include Groups & Videos":
                         if include_groups or include_videos:
                             filter_parts = []
@@ -1215,92 +1395,110 @@ with col_search1:
                                 filter_parts.append(f"groups: {include_groups}")
                             if include_videos:
                                 filter_parts.append(f"videos: {include_videos}")
-                            st.info(f"✅ Including {', '.join(filter_parts)}")
+                            search_info_parts.append(f"including {', '.join(filter_parts)}")
 
-                    # Determine endpoint and base payload based on search mode
-                    if search_mode == "Default":
-                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                    # Determine endpoint and base payload
+                    if use_advanced_endpoint or (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
+                        # Use advanced endpoint for reranking or filters
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/advanced"
+                        
                         payload = {
                             "query": query,
                             "top_k": current_top_k,
                             "score_threshold": current_threshold
                         }
 
-                    elif search_mode == "Exclude Groups":
-                        if not exclude_groups:
-                            st.warning("⚠️ No groups to exclude specified. Using default search.")
-                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
-                            payload = {
-                                "query": query,
-                                "top_k": current_top_k,
-                                "score_threshold": current_threshold
-                            }
-                        else:
-                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
-                            payload = {
-                                "query": query,
-                                "top_k": current_top_k,
-                                "score_threshold": current_threshold,
-                                "exclude_groups": exclude_groups
-                            }
-
-                    else:  # Include Groups & Videos
-                        if not include_groups and not include_videos:
-                            st.warning("⚠️ No groups or videos to include specified. Using default search.")
-                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
-                            payload = {
-                                "query": query,
-                                "top_k": current_top_k,
-                                "score_threshold": current_threshold
-                            }
-                        else:
-                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
-                            payload = {
-                                "query": query,
-                                "top_k": current_top_k,
-                                "score_threshold": current_threshold,
-                                "include_groups": include_groups,
-                                "include_videos": include_videos
-                            }
-
-                    # If metadata filter or object filter is enabled, use metadata-filter endpoint regardless of search mode
-                    if (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
-                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
-
-                        filter_info = []
-                        
-                        # Add search mode filters to the payload
+                        # Add search mode filters
                         if search_mode == "Exclude Groups" and exclude_groups:
                             payload["exclude_groups"] = exclude_groups
-                            filter_info.append(f"exclude groups: {exclude_groups}")
                         elif search_mode == "Include Groups & Videos":
                             if include_groups:
                                 payload["include_groups"] = include_groups
-                                filter_info.append(f"include groups: {include_groups}")
                             if include_videos:
                                 payload["include_videos"] = include_videos
-                                filter_info.append(f"include videos: {include_videos}")
 
-                        if metadata_filter:
+                        # Add metadata filters
+                        if use_metadata_filter and metadata_filter:
                             payload["metadata_filter"] = metadata_filter
-                            filter_info.append(
-                                f"metadata: {list(metadata_filter.keys())}")
+                            search_info_parts.append(f"metadata: {list(metadata_filter.keys())}")
 
-                        if object_filter:
+                        # Add object filters
+                        if use_object_filter and object_filter:
                             payload["object_filter"] = object_filter
-                            objects_str = ", ".join(
-                                object_filter["objects"][:3])
+                            objects_str = ", ".join(object_filter["objects"][:3])
                             if len(object_filter["objects"]) > 3:
                                 objects_str += f" (+{len(object_filter['objects'])-3} more)"
-                            filter_info.append(
-                                f"objects[{object_filter['mode']}]: {objects_str}")
+                            search_info_parts.append(f"objects[{object_filter['mode']}]: {objects_str}")
 
-                        st.info(
-                            f"🎯 Applying filters: {' | '.join(filter_info)}")
+                        # Add rerank parameters
+                        if rerank_params:
+                            payload.update(rerank_params)
+                            enabled_stages = []
+                            if rerank_params.get("rerank_superglobal_enabled"):
+                                enabled_stages.append("SuperGlobal")
+                            if rerank_params.get("rerank_caption_enabled"):
+                                enabled_stages.append("Caption")
+                            if rerank_params.get("rerank_llm_enabled"):
+                                enabled_stages.append("LLM")
+                            if enabled_stages:
+                                search_info_parts.append(f"rerank: {' → '.join(enabled_stages)}")
 
-                    # Show the final endpoint being used
-                    endpoint_display = endpoint.split('/')[-1]  # Just show the last part
-                    st.info(f"🔗 Using endpoint: {endpoint_display}")
+                        search_type = "⚡ Advanced Text Search"
+                        
+                    else:
+                        # Use basic endpoints for simple searches
+                        if search_mode == "Default":
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+
+                        elif search_mode == "Exclude Groups":
+                            if not exclude_groups:
+                                st.warning("⚠️ No groups to exclude specified. Using default search.")
+                                endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                                payload = {
+                                    "query": query,
+                                    "top_k": current_top_k,
+                                    "score_threshold": current_threshold
+                                }
+                            else:
+                                endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
+                                payload = {
+                                    "query": query,
+                                    "top_k": current_top_k,
+                                    "score_threshold": current_threshold,
+                                    "exclude_groups": exclude_groups
+                                }
+
+                        else:  # Include Groups & Videos
+                            if not include_groups and not include_videos:
+                                st.warning("⚠️ No groups or videos to include specified. Using default search.")
+                                endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                                payload = {
+                                    "query": query,
+                                    "top_k": current_top_k,
+                                    "score_threshold": current_threshold
+                                }
+                            else:
+                                endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
+                                payload = {
+                                    "query": query,
+                                    "top_k": current_top_k,
+                                    "score_threshold": current_threshold,
+                                    "include_groups": include_groups,
+                                    "include_videos": include_videos
+                                }
+
+                        search_type = "🚀 Basic Text Search"
+
+                    # Show search configuration
+                    if search_info_parts:
+                        st.info(f"{search_type} | {' | '.join(search_info_parts)}")
+                    else:
+                        st.info(search_type)
 
                     response = requests.post(
                         endpoint,
@@ -1311,11 +1509,15 @@ with col_search1:
                     if response.status_code == 200:
                         results = response.json()
                         st.session_state.search_results = results
-                        st.session_state.search_query = query
+                        
+                        # Update search query display
+                        query_display = query
+                        if use_advanced_endpoint:
+                            query_display = f"Advanced: {query}"
+                        st.session_state.search_query = query_display
                         st.rerun()
                     else:
-                        st.error(
-                            f"Search failed: {response.status_code} - {response.text}")
+                        st.error(f"Search failed: {response.status_code} - {response.text}")
 
                 except requests.exceptions.RequestException as e:
                     st.error(f"Connection error: {str(e)}")
@@ -1339,6 +1541,57 @@ with col_search2:
                         'top_k': image_top_k,
                         'score_threshold': image_score_threshold
                     }
+
+                    # Add rerank parameters if enabled
+                    if 'enable_rerank' in locals() and enable_rerank:
+                        # SuperGlobal rerank parameters
+                        if 'rerank_superglobal_enabled' in locals() and rerank_superglobal_enabled:
+                            params["rerank_superglobal_enabled"] = True
+                            if 'rerank_superglobal_weight' in locals():
+                                params["rerank_superglobal_weight"] = rerank_superglobal_weight
+                            if 'rerank_superglobal_top_t' in locals():
+                                params["rerank_superglobal_top_t"] = rerank_superglobal_top_t
+
+                        # Caption rerank parameters
+                        if 'rerank_caption_enabled' in locals() and rerank_caption_enabled:
+                            params["rerank_caption_enabled"] = True
+                            if 'rerank_caption_weight' in locals():
+                                params["rerank_caption_weight"] = rerank_caption_weight
+                            if 'rerank_caption_top_t' in locals():
+                                params["rerank_caption_top_t"] = rerank_caption_top_t
+                            if 'rerank_caption_timeout' in locals():
+                                params["rerank_caption_timeout"] = rerank_caption_timeout
+
+                        # LLM rerank parameters
+                        if 'rerank_llm_enabled' in locals() and rerank_llm_enabled:
+                            params["rerank_llm_enabled"] = True
+                            if 'rerank_llm_weight' in locals():
+                                params["rerank_llm_weight"] = rerank_llm_weight
+                            if 'rerank_llm_top_t' in locals():
+                                params["rerank_llm_top_t"] = rerank_llm_top_t
+                            if 'rerank_llm_timeout' in locals():
+                                params["rerank_llm_timeout"] = rerank_llm_timeout
+
+                        # Advanced settings
+                        if 'rerank_cache_enabled' in locals():
+                            params["rerank_cache_enabled"] = rerank_cache_enabled
+                        if 'rerank_fallback_enabled' in locals():
+                            params["rerank_fallback_enabled"] = rerank_fallback_enabled
+                        if 'rerank_final_top_k' in locals() and rerank_final_top_k > 0:
+                            params["rerank_final_top_k"] = rerank_final_top_k
+
+                        # Show rerank info for image search
+                        rerank_enabled_stages = []
+                        if params.get("rerank_superglobal_enabled"):
+                            rerank_enabled_stages.append("SuperGlobal")
+                        if params.get("rerank_caption_enabled"):
+                            rerank_enabled_stages.append("Caption")
+                        if params.get("rerank_llm_enabled"):
+                            rerank_enabled_stages.append("LLM")
+
+                        if rerank_enabled_stages:
+                            st.info(
+                                f"⚡ Image search with reranking: {' → '.join(rerank_enabled_stages)}")
 
                     endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/image"
 
