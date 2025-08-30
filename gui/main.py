@@ -424,12 +424,21 @@ def show_mpc_video(pts_time, result_data, result_index):
         
         col_csv1, col_csv2 = st.columns([2, 1])
         with col_csv1:
+            # Use session state to persist the filename value
+            csv_key = f"csv_filename_{result_index}"
+            if csv_key not in st.session_state:
+                st.session_state[csv_key] = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
             csv_filename_frame = st.text_input(
                 "CSV filename for frame export:",
-                value=f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                key=f"csv_frame_{result_index}",
+                placeholder="Enter CSV filename",
+                key=csv_key,
                 help="File to append current frame data"
             )
+            
+            # Use the session state value if input is empty
+            if not csv_filename_frame:
+                csv_filename_frame = st.session_state[csv_key]
         
         with col_csv2:
             # Frame input for export
