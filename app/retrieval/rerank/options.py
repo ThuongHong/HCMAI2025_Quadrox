@@ -41,7 +41,11 @@ class RerankOptions:
     w_llm: float = 1.2
 
     # Final output
-    final_top_k: int = 100
+    final_top_k: Optional[int] = 100
+
+    # Cache and fallback controls
+    cache_enabled: bool = True
+    fallback_enabled: bool = True
 
     def __post_init__(self):
         """Validate and clamp parameters after initialization."""
@@ -65,23 +69,33 @@ class RerankOptions:
         self.llm_timeout = max(1, min(300, self.llm_timeout))
         self.w_llm = max(0.0, min(5.0, self.w_llm))
 
-        self.final_top_k = max(1, min(1000, self.final_top_k))
+        # Handle final_top_k: None or 0 means no limit, positive means limit
+        if self.final_top_k is not None and self.final_top_k > 0:
+            self.final_top_k = max(1, min(1000, self.final_top_k))
 
         # Enforce ordering constraints: llm_top_t <= cap_top_t <= final_top_k <= sg_top_m
-        if self.llm_top_t > self.cap_top_t:
-            logger.warning(
-                f"Clamping llm_top_t from {self.llm_top_t} to {self.cap_top_t}")
-            self.llm_top_t = self.cap_top_t
+        # Only apply constraints if final_top_k is a positive number
+        if self.final_top_k is not None and self.final_top_k > 0:
+            if self.llm_top_t > self.cap_top_t:
+                logger.warning(
+                    f"Clamping llm_top_t from {self.llm_top_t} to {self.cap_top_t}")
+                self.llm_top_t = self.cap_top_t
 
-        if self.cap_top_t > self.final_top_k:
-            logger.warning(
-                f"Clamping cap_top_t from {self.cap_top_t} to {self.final_top_k}")
-            self.cap_top_t = self.final_top_k
+            if self.cap_top_t > self.final_top_k:
+                logger.warning(
+                    f"Clamping cap_top_t from {self.cap_top_t} to {self.final_top_k}")
+                self.cap_top_t = self.final_top_k
 
-        if self.final_top_k > self.sg_top_m:
-            logger.warning(
-                f"Clamping final_top_k from {self.final_top_k} to {self.sg_top_m}")
-            self.final_top_k = self.sg_top_m
+            if self.final_top_k > self.sg_top_m:
+                logger.warning(
+                    f"Clamping final_top_k from {self.final_top_k} to {self.sg_top_m}")
+                self.final_top_k = self.sg_top_m
+        else:
+            # When final_top_k is None/0, just ensure basic ordering
+            if self.llm_top_t > self.cap_top_t:
+                logger.warning(
+                    f"Clamping llm_top_t from {self.llm_top_t} to {self.cap_top_t}")
+                self.llm_top_t = self.cap_top_t
 
     @classmethod
     def from_request_and_config(
@@ -163,6 +177,9 @@ class RerankOptions:
             w_llm=get_value("w_llm", 1.2, float),
 
             final_top_k=get_value("final_top_k", 100, int),
+
+            cache_enabled=get_value("cache_enabled", True, bool),
+            fallback_enabled=get_value("fallback_enabled", True, bool),
         )
 
         # Validate at least one method is enabled in custom mode
@@ -186,6 +203,8 @@ class RerankOptions:
             "cap_top_t": self.cap_top_t,
             "llm_top_t": self.llm_top_t,
             "final_top_k": self.final_top_k,
+            "cache_enabled": self.cache_enabled,
+            "fallback_enabled": self.fallback_enabled,
             "weights": {
                 "w_sg": self.w_sg,
                 "w_cap": self.w_cap,

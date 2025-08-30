@@ -22,7 +22,7 @@ class EnsembleScorer:
         candidates: List[Any],
         score_dict: Dict[str, List[Tuple[Any, float]]],
         weights: Dict[str, float],
-        final_top_k: int = 100
+        final_top_k: Optional[int] = None
     ) -> List[Tuple[Any, float]]:
         """
         Combine scores from multiple reranking methods.
@@ -31,7 +31,7 @@ class EnsembleScorer:
             candidates: Original list of candidates
             score_dict: Dictionary mapping method names to (candidate, score) lists
             weights: Dictionary mapping method names to weights
-            final_top_k: Number of final results to return
+            final_top_k: Number of final results to return (None = no limit)
 
         Returns:
             List of (candidate, final_score) tuples sorted by score descending
@@ -93,11 +93,14 @@ class EnsembleScorer:
             # Sort by final score descending
             results.sort(key=lambda x: x[1], reverse=True)
 
-            # Limit to final_top_k
-            results = results[:final_top_k]
-
-            logger.debug(f"Ensemble scoring completed, final top-{len(results)} scores: "
-                         f"[{results[0][1]:.3f}, {results[-1][1]:.3f}]")
+            # Apply final_top_k limit: None = no limit, positive = limit
+            if final_top_k is not None and final_top_k > 0:
+                results = results[:final_top_k]
+                logger.debug(f"Ensemble scoring completed, limited to top-{len(results)} scores: "
+                             f"[{results[0][1]:.3f}, {results[-1][1]:.3f}]")
+            else:
+                logger.debug(f"Ensemble scoring completed, no limit applied, returning {len(results)} results: "
+                             f"[{results[0][1]:.3f}, {results[-1][1]:.3f}]" if results else "no results")
 
             return results
 

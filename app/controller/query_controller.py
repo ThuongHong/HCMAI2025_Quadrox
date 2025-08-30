@@ -115,7 +115,10 @@ class QueryController:
             'llm_model': 'llm_model',
             'llm_timeout': 'llm_timeout',
             'w_llm': 'w_llm',
-            'final_top_k': 'final_top_k'
+            'final_top_k': 'final_top_k',
+            # Add new cache and fallback flags
+            'rerank_cache_enabled': 'cache_enabled',
+            'rerank_fallback_enabled': 'fallback_enabled'
         }
 
         for req_param, internal_param in param_mapping.items():
@@ -153,6 +156,9 @@ class QueryController:
                 'RERANK_LLM_TIMEOUT_S': self.rerank_config.RERANK_LLM_TIMEOUT_S,
                 'RERANK_LLM_SCORE_WEIGHT': self.rerank_config.RERANK_LLM_SCORE_WEIGHT,
                 'RERANK_FINAL_TOP_K': self.rerank_config.RERANK_FINAL_TOP_K,
+                # Add cache and fallback defaults from config
+                'RERANK_CACHE_ENABLED': getattr(self.rerank_config, 'RERANK_CACHE_ENABLED', True),
+                'RERANK_FALLBACK_ENABLED': getattr(self.rerank_config, 'RERANK_FALLBACK_ENABLED', True),
             }
 
         # Create options with precedence

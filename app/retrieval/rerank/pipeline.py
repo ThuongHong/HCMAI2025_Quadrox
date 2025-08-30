@@ -7,7 +7,7 @@ import logging
 
 from .options import RerankOptions
 from .superglobal import SuperGlobalReranker
-from .captioning import CaptionService
+from .captioning import CaptionRanker
 from .llm_ranker import LLMRanker
 from .ensemble import EnsembleScorer
 
@@ -36,7 +36,7 @@ class RerankPipeline:
 
         # Initialize reranking components
         self.superglobal = SuperGlobalReranker(model_service)
-        self.caption_service = CaptionService(
+        self.caption_ranker = CaptionRanker(
             model_service,
             cache_dir=f"{cache_base_dir}/captions"
         )
@@ -173,16 +173,28 @@ class RerankPipeline:
                     base_candidates,
                     method_results,
                     weights,
-                    options.final_top_k
+                    final_top_k=None  # Let ensemble handle unlimited results
                 )
 
-                # Extract candidates in final order
-                final_candidates = [
-                    candidate for candidate, score in final_results]
+                # Apply final_top_k limit: None or 0 = no limit, positive = limit
+                if options.final_top_k is None or options.final_top_k <= 0:
+                    final_candidates = [
+                        candidate for candidate, score in final_results]
+                    logger.debug(
+                        f"No final_top_k limit applied, returning {len(final_candidates)} candidates")
+                else:
+                    final_candidates = [candidate for candidate,
+                                        score in final_results[:options.final_top_k]]
+                    logger.debug(
+                        f"Applied final_top_k={options.final_top_k}, returning {len(final_candidates)} candidates")
             else:
                 logger.warning(
                     "All reranking stages failed, returning original candidates")
-                final_candidates = base_candidates[:options.final_top_k]
+                # Apply same logic for fallback
+                if options.final_top_k is None or options.final_top_k <= 0:
+                    final_candidates = base_candidates
+                else:
+                    final_candidates = base_candidates[:options.final_top_k]
 
             total_time = time.time() - start_time
 
@@ -196,8 +208,12 @@ class RerankPipeline:
 
         except Exception as e:
             logger.error(f"Reranking pipeline failed: {e}")
-            # Fallback to original candidates
-            return base_candidates[:options.final_top_k if options else 100]
+            # Fallback to original candidates with same final_top_k logic
+            if options and (options.final_top_k is None or options.final_top_k <= 0):
+                return base_candidates
+            else:
+                limit = options.final_top_k if options else 100
+                return base_candidates[:limit]
 
     async def _run_superglobal_stage(
         self,
@@ -232,11 +248,12 @@ class RerankPipeline:
         options: RerankOptions
     ) -> List[Tuple[Any, float]]:
         """Run Caption reranking stage."""
-        results = await self.caption_service.rerank_with_captions(
+        results = await self.caption_ranker.rerank_with_captions(
             query=query,
             candidates=candidates[:options.cap_top_t],
             top_t=options.cap_top_t,
-            timeout=30.0
+            cache_enabled=options.cache_enabled,
+            fallback_enabled=options.fallback_enabled
         )
 
         return results
@@ -252,7 +269,9 @@ class RerankPipeline:
             query=query,
             candidates=candidates[:options.llm_top_t],
             top_t=options.llm_top_t,
-            timeout=options.llm_timeout
+            timeout=options.llm_timeout,
+            cache_enabled=options.cache_enabled,
+            fallback_enabled=options.fallback_enabled
         )
 
         return results

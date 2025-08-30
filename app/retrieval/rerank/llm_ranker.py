@@ -53,7 +53,9 @@ class LLMRanker:
         query: str,
         candidates: List[Any],
         top_t: int = 5,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        cache_enabled: bool = True,
+        fallback_enabled: bool = True
     ) -> List[Tuple[Any, float]]:
         """
         Rerank candidates using LLM relevance scoring.
@@ -63,6 +65,8 @@ class LLMRanker:
             candidates: List of candidate items
             top_t: Number of top candidates to score with LLM
             timeout: Total timeout for LLM scoring
+            cache_enabled: Whether to use caching
+            fallback_enabled: Whether to use fallback on errors
 
         Returns:
             List of (candidate, llm_score) tuples
@@ -82,7 +86,8 @@ class LLMRanker:
             # Score candidates with LLM
             start_time = time.time()
             scores = await self._score_candidates_batch(
-                query, selected_candidates, timeout=timeout
+                query, selected_candidates, timeout=timeout,
+                cache_enabled=cache_enabled, fallback_enabled=fallback_enabled
             )
 
             elapsed = time.time() - start_time
@@ -97,21 +102,28 @@ class LLMRanker:
             # Sort by score descending
             results.sort(key=lambda x: x[1], reverse=True)
 
-            logger.debug(f"LLM reranking completed, "
-                         f"score range: [{min(scores):.3f}, {max(scores):.3f}]")
+            if scores:
+                logger.debug(f"LLM reranking completed, "
+                             f"score range: [{min(scores):.3f}, {max(scores):.3f}]")
 
             return results
 
         except Exception as e:
-            logger.error(f"LLM reranking failed: {e}")
-            # Fallback: return candidates with zero scores
-            return [(candidate, 0.0) for candidate in candidates[:top_t]]
+            if fallback_enabled:
+                logger.error(f"LLM reranking failed: {e}")
+                # Fallback: return candidates with zero scores
+                return [(candidate, 0.0) for candidate in candidates[:top_t]]
+            else:
+                logger.error(f"LLM reranking failed: {e} (no-fallback mode)")
+                return []
 
     async def _score_candidates_batch(
         self,
         query: str,
         candidates: List[Any],
-        timeout: int = 15
+        timeout: int = 15,
+        cache_enabled: bool = True,
+        fallback_enabled: bool = True
     ) -> List[float]:
         """
         Score a batch of candidates using LLM.
@@ -120,6 +132,8 @@ class LLMRanker:
             query: Text query
             candidates: List of candidates to score
             timeout: Total timeout for batch
+            cache_enabled: Whether to use caching
+            fallback_enabled: Whether to use fallback on errors
 
         Returns:
             List of relevance scores [0, 1]
@@ -129,7 +143,7 @@ class LLMRanker:
 
         for candidate in candidates:
             task = self._get_or_compute_llm_score(
-                query, candidate, single_timeout)
+                query, candidate, single_timeout, cache_enabled, fallback_enabled)
             tasks.append(task)
 
         try:
@@ -142,23 +156,35 @@ class LLMRanker:
             processed_scores = []
             for i, result in enumerate(scores):
                 if isinstance(result, Exception):
-                    logger.warning(
-                        f"LLM scoring failed for candidate {i}: {result}")
-                    processed_scores.append(0.0)
+                    if fallback_enabled:
+                        logger.warning(
+                            f"LLM scoring failed for candidate {i}: {result}")
+                        processed_scores.append(0.0)
+                    else:
+                        logger.error(
+                            f"LLM scoring failed for candidate {i}: {result} (no-fallback mode)")
+                        processed_scores.append(0.0)
                 else:
                     processed_scores.append(result)
 
             return processed_scores
 
         except asyncio.TimeoutError:
-            logger.error(f"LLM scoring batch timeout after {timeout}s")
-            return [0.0] * len(candidates)
+            if fallback_enabled:
+                logger.error(f"LLM scoring batch timeout after {timeout}s")
+                return [0.0] * len(candidates)
+            else:
+                logger.error(
+                    f"LLM scoring batch timeout after {timeout}s (no-fallback mode)")
+                return [0.0] * len(candidates)
 
     async def _get_or_compute_llm_score(
         self,
         query: str,
         candidate: Any,
-        timeout: float = 10.0
+        timeout: float = 10.0,
+        cache_enabled: bool = True,
+        fallback_enabled: bool = True
     ) -> float:
         """
         Get cached LLM score or compute new one.
@@ -167,6 +193,8 @@ class LLMRanker:
             query: Text query
             candidate: Candidate item
             timeout: Timeout for single scoring
+            cache_enabled: Whether to use caching
+            fallback_enabled: Whether to use fallback on errors
 
         Returns:
             Relevance score [0, 1]
@@ -176,44 +204,58 @@ class LLMRanker:
             cache_key = self._create_cache_key(query, candidate)
             cache_path = self.cache_dir / f"{cache_key}.json"
 
-            # Check cache first
-            if cache_path.exists():
+            # Check cache first (if enabled)
+            if cache_enabled and cache_path.exists():
                 try:
                     with open(cache_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         return float(data.get('relevance', 0.0))
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to read LLM cache {cache_path}: {e}")
+                    if fallback_enabled:
+                        logger.warning(
+                            f"Failed to read LLM cache {cache_path}: {e}")
+                    else:
+                        logger.error(
+                            f"Failed to read LLM cache {cache_path}: {e} (no-fallback mode)")
 
             # Compute new score
-            score = await self._compute_llm_score(query, candidate, timeout)
+            score = await self._compute_llm_score(query, candidate, timeout, fallback_enabled)
 
-            # Cache the result
-            try:
-                cache_data = {
-                    'query': query,
-                    'image_id': self._get_image_id(candidate),
-                    'relevance': float(score),
-                    'model': self.model_name,
-                    'timestamp': time.time()
-                }
-                with open(cache_path, 'w', encoding='utf-8') as f:
-                    json.dump(cache_data, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                logger.warning(f"Failed to write LLM cache {cache_path}: {e}")
+            # Cache the result (if enabled)
+            if cache_enabled and score > 0:
+                try:
+                    cache_data = {
+                        'query': query,
+                        'relevance': score,
+                        'model': self.model_name,
+                        'timestamp': time.time()
+                    }
+                    with open(cache_path, 'w', encoding='utf-8') as f:
+                        json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    if fallback_enabled:
+                        logger.warning(
+                            f"Failed to write LLM cache {cache_path}: {e}")
+                    else:
+                        logger.warning(
+                            f"Failed to write LLM cache {cache_path}: {e} (no-fallback mode)")
 
             return score
 
         except Exception as e:
-            logger.error(f"LLM scoring failed: {e}")
-            return 0.0
+            if fallback_enabled:
+                logger.error(f"LLM scoring failed: {e}")
+                return 0.0
+            else:
+                logger.error(f"LLM scoring failed: {e} (no-fallback mode)")
+                return 0.0
 
     async def _compute_llm_score(
         self,
         query: str,
         candidate: Any,
-        timeout: float = 10.0
+        timeout: float = 10.0,
+        fallback_enabled: bool = True
     ) -> float:
         """
         Compute LLM relevance score for query-candidate pair.

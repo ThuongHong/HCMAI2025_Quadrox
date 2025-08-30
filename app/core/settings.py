@@ -87,6 +87,12 @@ class RerankSettings(BaseSettings):
     RERANK_FINAL_TOP_K: int = Field(
         default=100, description="Final top-K results")
 
+    # Cache and fallback controls
+    RERANK_CACHE_ENABLED: bool = Field(
+        default=True, description="Enable caching for rerank stages")
+    RERANK_FALLBACK_ENABLED: bool = Field(
+        default=True, description="Enable fallback on rerank errors")
+
 
 class AppSettings(BaseSettings):
     # Model
