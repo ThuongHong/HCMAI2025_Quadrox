@@ -220,9 +220,9 @@ def export_all_results_to_csv(filename, results_list):
                     }
                     all_data.append(row_data)
         
-        # Create DataFrame and save without header
+        # Create DataFrame and save without header with UTF-8 encoding
         df = pd.DataFrame(all_data)
-        df.to_csv(filename, index=False, header=False)
+        df.to_csv(filename, index=False, header=False, encoding='utf-8')
         
         return True, len(all_data)
     except Exception as e:
