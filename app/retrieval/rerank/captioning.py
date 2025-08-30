@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 class CaptionRanker:
     """
-    Caption-based reranking using synthetic captions generated from metadata.
-    Uses lightweight metadata synthesis instead of heavy multimodal models.
+    Caption-based reranking using synthetic captions generated from metadata
+    or real Vietnamese captions using VinternCaptionerCPU.
     """
 
     def __init__(
@@ -26,7 +26,15 @@ class CaptionRanker:
         model_service=None,
         cache_dir: str = "./cache/captions",
         model_name: str = "synthetic",
-        max_workers: int = 2
+        max_workers: int = 2,
+        # New Vintern captioner parameters
+        vintern_model_path: str = "./models/Vintern-1B-v3_5",
+        caption_style: str = "dense",
+        max_new_tokens: int = 64,
+        allow_on_demand: bool = False,
+        alpha: float = 1.0,
+        beta: float = 0.25,
+        multilingual_model_path: str = "./models/clip-multilingual/clip-ViT-B-32-multilingual-v1"
     ):
         """
         Initialize caption ranker.
@@ -34,22 +42,67 @@ class CaptionRanker:
         Args:
             model_service: Service for text embedding computation
             cache_dir: Directory for caption cache
-            model_name: Caption generation model name ("synthetic" for metadata-based)
+            model_name: Caption generation model ("synthetic", "vintern_cpu")
             max_workers: Max worker threads for parallel processing
+            vintern_model_path: Path to Vintern model for real captioning
+            caption_style: Caption style for Vintern (dense, short, tags, ocr)
+            max_new_tokens: Max tokens for Vintern caption generation
+            allow_on_demand: Allow on-demand caption generation (may be slow)
+            alpha: Weight for CLIP score in final scoring
+            beta: Weight for caption score in final scoring
+            multilingual_model_path: Path to multilingual text encoder
         """
         self.model_service = model_service
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.model_name = model_name
+        self.caption_style = caption_style
+        self.max_new_tokens = max_new_tokens
+        self.allow_on_demand = allow_on_demand
+        self.alpha = alpha  # CLIP score weight
+        self.beta = beta    # Caption score weight
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
         # Cache for captions with metadata hash validation
         self._cache_file = self.cache_dir / "captions.json"
         self._cache = self._load_cache()
 
+        # Initialize Vintern captioner if needed
+        self.vintern_captioner = None
+        if model_name == "vintern_cpu":
+            try:
+                from .vintern_captioner import VinternCaptionerCPU
+                self.vintern_captioner = VinternCaptionerCPU(
+                    model_path=vintern_model_path,
+                    cache_dir=str(self.cache_dir.parent / "vintern_captions"),
+                    max_workers=max_workers
+                )
+                logger.info(
+                    f"VinternCaptionerCPU initialized: {vintern_model_path}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize VinternCaptionerCPU: {e}, falling back to synthetic")
+                self.model_name = "synthetic"
+
+        # Initialize multilingual text embedder if using Vintern
+        self.multilingual_embedder = None
+        if model_name == "vintern_cpu" and self.vintern_captioner:
+            try:
+                from ...common.text_embedding_multilingual import get_multilingual_embedder
+                self.multilingual_embedder = get_multilingual_embedder(
+                    model_path=multilingual_model_path,
+                    device="cpu"
+                )
+                logger.info(
+                    f"Multilingual text embedder initialized: {multilingual_model_path}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize multilingual embedder: {e}")
+
         logger.info(
-            f"CaptionRanker initialized with model={model_name}, cache_dir={cache_dir}")
+            f"CaptionRanker initialized with model={self.model_name}, cache_dir={cache_dir}, "
+            f"style={caption_style}, alpha={alpha}, beta={beta}")
 
     def _load_cache(self) -> Dict[str, Any]:
         """Load caption cache from file."""
@@ -215,7 +268,7 @@ class CaptionRanker:
         fallback_enabled: bool = True
     ) -> str:
         """
-        Get cached caption or generate new synthetic one.
+        Get cached caption or generate new one (synthetic or Vintern).
 
         Args:
             candidate: Candidate item with metadata
@@ -234,6 +287,118 @@ class CaptionRanker:
                 else:
                     return ""
 
+            # For Vintern captioner, try real caption generation first
+            if self.model_name == "vintern_cpu" and self.vintern_captioner:
+                return await self._get_or_generate_vintern_caption(
+                    candidate, image_id, cache_enabled, fallback_enabled
+                )
+
+            # Fall back to synthetic captions for other models
+            return await self._get_or_generate_synthetic_caption(
+                candidate, image_id, cache_enabled, fallback_enabled
+            )
+
+        except Exception as e:
+            if fallback_enabled:
+                logger.warning(f"Caption generation failed: {e}")
+                return "objects: scene | scene: generic frame"
+            else:
+                logger.error(
+                    f"Caption generation failed: {e} (no-fallback mode)")
+                return ""
+
+    async def _get_or_generate_vintern_caption(
+        self,
+        candidate: Any,
+        image_id: str,
+        cache_enabled: bool = True,
+        fallback_enabled: bool = True
+    ) -> str:
+        """Generate caption using VinternCaptionerCPU."""
+        try:
+            # Get image path from candidate
+            image_path = self._get_image_path(candidate)
+            if not image_path or not Path(image_path).exists():
+                if fallback_enabled:
+                    logger.debug(
+                        f"Image path not found for {image_id}, using synthetic caption")
+                    return await self._get_or_generate_synthetic_caption(
+                        candidate, image_id, cache_enabled, fallback_enabled
+                    )
+                else:
+                    return ""
+
+            # Check cache first if enabled
+            if cache_enabled:
+                cache_key = f"{image_id}_{self.caption_style}_{self.max_new_tokens}"
+                if cache_key in self._cache:
+                    cached_entry = self._cache[cache_key]
+                    if cached_entry.get('model') == 'vintern_cpu':
+                        return cached_entry.get('caption', '')
+
+            # Generate caption on-demand if allowed
+            if self.allow_on_demand:
+                result = self.vintern_captioner.caption_image(
+                    image_path=image_path,
+                    style=self.caption_style,
+                    max_new_tokens=self.max_new_tokens
+                )
+
+                if "caption" in result:
+                    caption = result["caption"]
+
+                    # Cache the result
+                    if cache_enabled and caption:
+                        cache_key = f"{image_id}_{self.caption_style}_{self.max_new_tokens}"
+                        self._cache[cache_key] = {
+                            'caption': caption,
+                            'model': 'vintern_cpu',
+                            'style': self.caption_style,
+                            'timestamp': time.time()
+                        }
+                        # Save cache periodically
+                        if len(self._cache) % 10 == 0:
+                            self._save_cache()
+
+                    return caption
+                else:
+                    # Error in caption generation
+                    if fallback_enabled:
+                        logger.debug(
+                            f"Vintern caption failed for {image_id}, using synthetic")
+                        return await self._get_or_generate_synthetic_caption(
+                            candidate, image_id, cache_enabled, fallback_enabled
+                        )
+                    else:
+                        return ""
+            else:
+                # On-demand disabled, fall back to synthetic
+                if fallback_enabled:
+                    return await self._get_or_generate_synthetic_caption(
+                        candidate, image_id, cache_enabled, fallback_enabled
+                    )
+                else:
+                    return ""
+
+        except Exception as e:
+            logger.error(
+                f"Vintern caption generation failed for {image_id}: {e}")
+            if fallback_enabled:
+                return await self._get_or_generate_synthetic_caption(
+                    candidate, image_id, cache_enabled, fallback_enabled
+                )
+            else:
+                return ""
+
+    async def _get_or_generate_synthetic_caption(
+        self,
+        candidate: Any,
+        image_id: str,
+        cache_enabled: bool = True,
+        fallback_enabled: bool = True
+    ) -> str:
+        """Generate synthetic caption from metadata (original implementation)."""
+        try:
             # Extract metadata for hashing
             metadata = self._extract_metadata(candidate)
             meta_hash = self._compute_metadata_hash(metadata)
@@ -263,11 +428,11 @@ class CaptionRanker:
 
         except Exception as e:
             if fallback_enabled:
-                logger.warning(f"Caption generation failed: {e}")
+                logger.warning(f"Synthetic caption generation failed: {e}")
                 return "objects: scene | scene: generic frame"
             else:
                 logger.error(
-                    f"Caption generation failed: {e} (no-fallback mode)")
+                    f"Synthetic caption generation failed: {e} (no-fallback mode)")
                 return ""
 
     def _extract_metadata(self, candidate: Any) -> Dict[str, Any]:
@@ -389,6 +554,7 @@ class CaptionRanker:
     ) -> List[float]:
         """
         Compute similarities between query and captions.
+        Uses multilingual embedder for Vintern captions, otherwise uses model_service.
 
         Args:
             query: Text query
@@ -398,6 +564,62 @@ class CaptionRanker:
         Returns:
             List of similarity scores [0, 1]
         """
+        try:
+            # Use multilingual embedder for Vintern captions
+            if self.model_name == "vintern_cpu" and self.multilingual_embedder:
+                return await self._compute_multilingual_similarities(query, captions, fallback_enabled)
+
+            # Use original model service for synthetic captions
+            return await self._compute_original_similarities(query, captions, fallback_enabled)
+
+        except Exception as e:
+            if fallback_enabled:
+                logger.error(f"Caption similarity computation failed: {e}")
+                return [0.0] * len(captions)
+            else:
+                logger.error(
+                    f"Caption similarity computation failed: {e} (no-fallback mode)")
+                return [0.0] * len(captions)
+
+    async def _compute_multilingual_similarities(
+        self,
+        query: str,
+        captions: List[str],
+        fallback_enabled: bool = True
+    ) -> List[float]:
+        """Compute similarities using multilingual text embedder."""
+        try:
+            # Filter empty captions
+            valid_captions = [caption.strip() if caption.strip(
+            ) else "no content" for caption in captions]
+
+            # Compute similarity using multilingual embedder
+            similarity_matrix = self.multilingual_embedder.compute_similarity(
+                query, valid_captions)
+
+            # Extract similarities (query is single text, so take first row)
+            similarities = similarity_matrix[0] if similarity_matrix.shape[0] > 0 else np.zeros(
+                len(captions))
+
+            # Normalize to [0, 1] range: (cosine + 1) / 2
+            similarities = np.clip((similarities + 1) / 2, 0, 1)
+
+            return similarities.tolist()
+
+        except Exception as e:
+            logger.error(f"Multilingual similarity computation failed: {e}")
+            if fallback_enabled:
+                return [0.0] * len(captions)
+            else:
+                raise
+
+    async def _compute_original_similarities(
+        self,
+        query: str,
+        captions: List[str],
+        fallback_enabled: bool = True
+    ) -> List[float]:
+        """Compute similarities using original model service (for synthetic captions)."""
         try:
             if not self.model_service:
                 if fallback_enabled:
@@ -414,7 +636,15 @@ class CaptionRanker:
                 query_embedding = self.model_service.embedding(query)
                 if hasattr(query_embedding, 'tolist'):
                     query_embedding = query_embedding.tolist()
-                query_emb = np.array(query_embedding).reshape(1, -1)
+                
+                # Ensure query embedding is properly shaped
+                query_emb = np.array(query_embedding)
+                if query_emb.ndim == 1:
+                    query_emb = query_emb.reshape(1, -1)
+                elif query_emb.ndim > 2:
+                    # Flatten any extra dimensions
+                    query_emb = query_emb.reshape(1, -1)
+                
             except Exception as e:
                 if fallback_enabled:
                     logger.warning(f"Failed to compute query embedding: {e}")
@@ -453,6 +683,13 @@ class CaptionRanker:
                 return [0.0] * len(captions)
 
             cap_embs = np.array(caption_embeddings)
+            
+            # Ensure caption embeddings are 2D
+            if cap_embs.ndim == 1:
+                cap_embs = cap_embs.reshape(1, -1)
+            elif cap_embs.ndim > 2:
+                # Flatten extra dimensions but keep batch dimension
+                cap_embs = cap_embs.reshape(cap_embs.shape[0], -1)
 
             # Compute cosine similarities
             similarities = cosine_similarity(query_emb, cap_embs)[0]
@@ -461,6 +698,15 @@ class CaptionRanker:
             similarities = np.clip((similarities + 1) / 2, 0, 1)
 
             return similarities.tolist()
+
+        except Exception as e:
+            if fallback_enabled:
+                logger.error(f"Original similarity computation failed: {e}")
+                return [0.0] * len(captions)
+            else:
+                logger.error(
+                    f"Original similarity computation failed: {e} (no-fallback mode)")
+                return [0.0] * len(captions)
 
         except Exception as e:
             if fallback_enabled:
@@ -506,6 +752,48 @@ class CaptionRanker:
 
         except Exception as e:
             logger.warning(f"Failed to extract image ID: {e}")
+            return None
+
+    def _get_image_path(self, candidate: Any) -> Optional[str]:
+        """
+        Extract image file path from candidate.
+
+        Args:
+            candidate: Candidate object
+
+        Returns:
+            Image file path or None
+        """
+        try:
+            # Try different path attribute names
+            for attr in ['image_path', 'path', 'file_path', 'keyframe_path']:
+                if hasattr(candidate, attr):
+                    path = getattr(candidate, attr)
+                    if path and isinstance(path, (str, Path)):
+                        return str(path)
+
+            # Try to construct path from metadata
+            if hasattr(candidate, 'group_num') and hasattr(candidate, 'video_num') and hasattr(candidate, 'keyframe_num'):
+                # Construct path based on naming convention
+                group_num = getattr(candidate, 'group_num')
+                video_num = getattr(candidate, 'video_num')
+                keyframe_num = getattr(candidate, 'keyframe_num')
+
+                # Check common path patterns
+                patterns = [
+                    f"resources/keyframes/L{group_num:02d}/L{group_num:02d}_V{video_num:03d}/{keyframe_num:03d}.jpg",
+                    f"./resources/keyframes/L{group_num:02d}/L{group_num:02d}_V{video_num:03d}/{keyframe_num:03d}.jpg",
+                    f"keyframes/L{group_num:02d}/L{group_num:02d}_V{video_num:03d}/{keyframe_num:03d}.jpg"
+                ]
+
+                for pattern in patterns:
+                    if Path(pattern).exists():
+                        return pattern
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Failed to extract image path: {e}")
             return None
 
     def _try_llm_caption_backend(self, image_path: str) -> Optional[str]:

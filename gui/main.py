@@ -23,19 +23,20 @@ st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
 
 # Helper Functions
 
+
 def debug_paths():
     """Debug function to check current working directory and available paths"""
     import os
     current_dir = os.getcwd()
     st.write(f"**Current working directory:** {current_dir}")
-    
+
     # Check for resources directory
     resources_paths = [
         Path("../resources"),
         Path("resources"),
         Path("d:/Study/HCMAI2025_Quadrox/resources")
     ]
-    
+
     st.write("**Resource directory checks:**")
     for path in resources_paths:
         exists = path.exists()
@@ -45,21 +46,23 @@ def debug_paths():
             for subdir in ['map-keyframes', 'metadata', 'objects']:
                 subpath = path / subdir
                 st.write(f"  - {subpath}: {'✅' if subpath.exists() else '❌'}")
-    
+
     # Test the parsing functions with sample data
     st.write("**Function testing:**")
     test_path = "resources/keyframes/L21/L21_V001/002.jpg"
     video_id, frame_idx = get_frame_info_from_keyframe_path(test_path)
-    
+
     if video_id and frame_idx is not None:
         pts_time = get_pts_time_from_n(video_id, frame_idx)
         if pts_time is not None:
             st.success("✅ Complete parsing and lookup workflow is working!")
-            st.write(f"Sample: `{video_id}` frame `{frame_idx}` → `{pts_time}s`")
+            st.write(
+                f"Sample: `{video_id}` frame `{frame_idx}` → `{pts_time}s`")
         else:
             st.warning("⚠️ pts_time lookup failed")
     else:
         st.warning("⚠️ Path parsing failed")
+
 
 def get_frame_info_from_keyframe_path(keyframe_path):
     """Extract video ID and frame index from keyframe path"""
@@ -67,11 +70,11 @@ def get_frame_info_from_keyframe_path(keyframe_path):
         # Path structure: .../keyframes/L21/L21_V001/001.jpg
         # Extract the path components
         path_parts = keyframe_path.replace('\\', '/').split('/')
-        
+
         # Find the pattern in the path
         video_id_full = None
         frame_filename = None
-        
+
         for i, part in enumerate(path_parts):
             # Look for L{batch}_V{video} pattern in directory names
             if re.match(r'L\d+_V\d+', part):
@@ -80,12 +83,13 @@ def get_frame_info_from_keyframe_path(keyframe_path):
                 if i + 1 < len(path_parts):
                     frame_filename = path_parts[i + 1]
                 break
-        
+
         if video_id_full and frame_filename:
             # Extract frame index from filename (e.g., "001.jpg" -> 1)
             filename_without_ext = os.path.splitext(frame_filename)[0]
             try:
-                frame_idx = int(filename_without_ext)  # Convert "001" to 1, "002" to 2, etc.
+                # Convert "001" to 1, "002" to 2, etc.
+                frame_idx = int(filename_without_ext)
                 return video_id_full, frame_idx
             except ValueError:
                 # Fallback: try to extract numbers from filename
@@ -93,10 +97,11 @@ def get_frame_info_from_keyframe_path(keyframe_path):
                 if numbers:
                     frame_idx = int(numbers[-1])  # Take the last number found
                     return video_id_full, frame_idx
-        
+
         return None, None
     except Exception as e:
         return None, None
+
 
 def get_real_frame_idx_from_n(video_id, n):
     """Get real frame_idx from n using map-keyframes CSV"""
@@ -105,28 +110,31 @@ def get_real_frame_idx_from_n(video_id, n):
         possible_paths = [
             Path("../resources/map-keyframes") / f"{video_id}.csv",
             Path("resources/map-keyframes") / f"{video_id}.csv",
-            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") /
+            f"{video_id}.csv",
             Path("../resources/map-keyframes") / f"{video_id.upper()}.csv",
             Path("resources/map-keyframes") / f"{video_id.upper()}.csv",
-            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") /
+            f"{video_id.upper()}.csv",
         ]
-        
+
         map_file_path = None
         for path in possible_paths:
             if path.exists():
                 map_file_path = path
                 break
-        
+
         if map_file_path and map_file_path.exists():
             df = pd.read_csv(map_file_path)
             # Find the row where 'n' matches our n value
             matching_row = df[df['n'] == n]
             if not matching_row.empty:
                 return int(matching_row.iloc[0]['frame_idx'])
-        
+
         return None
     except Exception as e:
         return None
+
 
 def get_pts_time_from_n(video_id, n):
     """Get pts_time from filename number (n) using map-keyframes CSV"""
@@ -135,18 +143,20 @@ def get_pts_time_from_n(video_id, n):
         possible_paths = [
             Path("../resources/map-keyframes") / f"{video_id}.csv",
             Path("resources/map-keyframes") / f"{video_id}.csv",
-            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") /
+            f"{video_id}.csv",
             Path("../resources/map-keyframes") / f"{video_id.upper()}.csv",
             Path("resources/map-keyframes") / f"{video_id.upper()}.csv",
-            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") /
+            f"{video_id.upper()}.csv",
         ]
-        
+
         map_file_path = None
         for path in possible_paths:
             if path.exists():
                 map_file_path = path
                 break
-        
+
         if map_file_path and map_file_path.exists():
             df = pd.read_csv(map_file_path)
             # The n from our parsing (e.g., 1 from "001.jpg") corresponds to the 'n' column
@@ -154,10 +164,11 @@ def get_pts_time_from_n(video_id, n):
             matching_row = df[df['n'] == n]
             if not matching_row.empty:
                 return float(matching_row.iloc[0]['pts_time'])
-        
+
         return None
     except Exception as e:
         return None
+
 
 def append_to_csv(filename, result_data):
     """Append a single result to CSV file in format: video_id, frame_idx, [vqa_answer]"""
@@ -168,14 +179,15 @@ def append_to_csv(filename, result_data):
         # Ensure the filename has .csv extension
         filename = str(output_dir / filename)
         if not filename.endswith('.csv'):
-            filename += '.csv'    
-        
+            filename += '.csv'
+
         # Data row: video_id, real frame_idx, and optionally vqa_answer
         row_data = {
             'video_id': result_data.get('video_id', ''),
-            'frame_idx': result_data.get('real_frame_idx', result_data.get('frame_idx', '')),  # Use real_frame_idx if available
+            # Use real_frame_idx if available
+            'frame_idx': result_data.get('real_frame_idx', result_data.get('frame_idx', '')),
         }
-        
+
         # Add VQA answer if provided
         vqa_text = ""
         if 'vqa_answer' in result_data and result_data['vqa_answer']:
@@ -185,15 +197,17 @@ def append_to_csv(filename, result_data):
         with open(filename, 'a', encoding='utf-8', newline='') as f:
             if vqa_text:
                 # Format: video_id,frame_idx,"vqa_answer"
-                f.write(f'{row_data["video_id"]},{row_data["frame_idx"]},"{vqa_text}"\n')
+                f.write(
+                    f'{row_data["video_id"]},{row_data["frame_idx"]},"{vqa_text}"\n')
             else:
                 # Format: video_id,frame_idx
                 f.write(f'{row_data["video_id"]},{row_data["frame_idx"]}\n')
-        
+
         return True
     except Exception as e:
         st.error(f"Error appending to CSV: {e}")
         return False
+
 
 def export_all_results_to_csv(filename, results_list):
     """Export all search results to CSV file in simple format: video_id, frame_idx"""
@@ -203,13 +217,14 @@ def export_all_results_to_csv(filename, results_list):
         filename = str(output_dir / filename)
         if not filename.endswith('.csv'):
             filename += '.csv'
-        
+
         # Prepare simple data
         all_data = []
         for result in results_list:
             # Extract frame info from path (e.g., L21_V001 from "L21/L21_V001/001.jpg")
-            video_id, n = get_frame_info_from_keyframe_path(result.get('path', ''))
-            
+            video_id, n = get_frame_info_from_keyframe_path(
+                result.get('path', ''))
+
             if video_id and n:
                 # Get real frame_idx from CSV mapping
                 real_frame_idx = get_real_frame_idx_from_n(video_id, n)
@@ -219,11 +234,11 @@ def export_all_results_to_csv(filename, results_list):
                         'frame_idx': real_frame_idx,  # Use real frame_idx from mapping
                     }
                     all_data.append(row_data)
-        
+
         # Create DataFrame and save without header with UTF-8 encoding
         df = pd.DataFrame(all_data)
         df.to_csv(filename, index=False, header=False, encoding='utf-8')
-        
+
         return True, len(all_data)
     except Exception as e:
         st.error(f"Error exporting to CSV: {e}")
@@ -240,7 +255,7 @@ def load_available_objects():
             Path("resources/objects/all_objects_found.json"),
             Path("d:/Study/HCMAI2025_Quadrox/resources/objects/all_objects_found.json")
         ]
-        
+
         for objects_file in possible_paths:
             if objects_file.exists():
                 with open(objects_file, 'r', encoding='utf-8') as f:
@@ -286,7 +301,7 @@ def load_available_keywords():
             Path("resources/metadata"),
             Path("d:/Study/HCMAI2025_Quadrox/resources/metadata")
         ]
-        
+
         for metadata_dir in metadata_dirs:
             if metadata_dir.exists():
                 for json_file in metadata_dir.glob("*.json"):
@@ -298,11 +313,74 @@ def load_available_keywords():
                     except Exception as e:
                         continue  # Skip files that can't be parsed
                 break  # Use the first directory that exists
-                
+
     except Exception as e:
         st.warning(f"Could not load keywords from metadata files: {e}")
-    
+
     return sorted(list(keywords_set))  # Return sorted list
+
+
+def get_image_caption(image_path, api_base_url):
+    """Fetch generated caption for an image from the Vietnamese captioning system"""
+    try:
+        # Try to get caption from the captioning service
+        caption_url = f"{api_base_url}/api/caption"
+
+        # Check if the image file exists
+        if not os.path.exists(image_path):
+            return None
+
+        # Prepare the request
+        with open(image_path, 'rb') as img_file:
+            files = {'image': (os.path.basename(
+                image_path), img_file, 'image/jpeg')}
+            data = {
+                'style': 'dense',  # Use dense style for detailed captions
+                'allow_fallback': True  # Allow fallback to BLIP if Vintern fails
+            }
+
+            response = requests.post(
+                caption_url, files=files, data=data, timeout=30)
+
+            if response.status_code == 200:
+                result = response.json()
+                if 'caption' in result and result.get('success', False):
+                    return {
+                        'caption': result['caption'],
+                        'style': result.get('style', 'dense'),
+                        'source': result.get('source', 'unknown'),
+                        'processing_time': result.get('processing_time_ms', 0)
+                    }
+            elif response.status_code == 500:
+                # API returned error but might have fallback info
+                try:
+                    result = response.json()
+                    if 'caption' in result and result['caption'] != "Caption generation failed":
+                        return {
+                            'caption': result['caption'],
+                            'style': result.get('style', 'dense'),
+                            'source': result.get('source', 'fallback'),
+                            'processing_time': result.get('processing_time_ms', 0)
+                        }
+                except:
+                    pass
+
+        return None
+
+    except requests.exceptions.RequestException as e:
+        # Network or API error
+        st.warning(f"Could not fetch caption from API: {e}")
+        return None
+    except Exception as e:
+        # Other errors
+        st.warning(f"Error processing caption request: {e}")
+        return None
+
+
+@st.cache_data
+def get_cached_caption(image_path, api_base_url):
+    """Get caption with caching to avoid repeated API calls"""
+    return get_image_caption(image_path, api_base_url)
 
 
 # Functions
@@ -312,27 +390,30 @@ def open_in_mpc(video_url, start_time=0):
     try:
         # Check if yt-dlp is available
         try:
-            subprocess.run(['yt-dlp', '--version'], capture_output=True, check=True, timeout=5)
+            subprocess.run(['yt-dlp', '--version'],
+                           capture_output=True, check=True, timeout=5)
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             st.error("❌ yt-dlp not found. Please install: pip install yt-dlp")
             st.info("💡 Or download from: https://github.com/yt-dlp/yt-dlp/releases")
             return False
-        
+
         # Get direct stream URL
         with st.spinner("🔍 Getting video stream URL..."):
             cmd = [
-                'yt-dlp', 
-                '-g', 
-                '--format', 'best[height<=720]/best',  # Prefer 720p or best available
+                'yt-dlp',
+                '-g',
+                # Prefer 720p or best available
+                '--format', 'best[height<=720]/best',
                 '--no-warnings',
                 video_url
             ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30)
+
             if result.returncode == 0:
                 stream_url = result.stdout.strip()
-                
+
                 # Try different MPC-HC paths
                 mpc_paths = [
                     r'C:\Program Files\MPC-HC\mpc-hc64.exe',
@@ -342,7 +423,7 @@ def open_in_mpc(video_url, start_time=0):
                     'mpc-hc64.exe',  # If in PATH
                     'mpc-hc.exe'     # If in PATH
                 ]
-                
+
                 mpc_found = False
                 for mpc_path in mpc_paths:
                     try:
@@ -350,32 +431,37 @@ def open_in_mpc(video_url, start_time=0):
                         if mpc_path.startswith('C:'):
                             if not Path(mpc_path).exists():
                                 continue
-                        
+
                         # Build command
                         mpc_cmd = [mpc_path, stream_url]
-                        
+
                         # Add start time if specified (MPC-HC uses /start with space, not =)
                         if start_time > 0:
-                            mpc_cmd.extend(['/start', str(int(start_time * 1000))])  # Convert to milliseconds
-                        
+                            # Convert to milliseconds
+                            mpc_cmd.extend(
+                                ['/start', str(int(start_time * 1000))])
+
                         # Launch MPC
-                        subprocess.Popen(mpc_cmd, creationflags=subprocess.CREATE_NO_WINDOW)
+                        subprocess.Popen(
+                            mpc_cmd, creationflags=subprocess.CREATE_NO_WINDOW)
                         mpc_found = True
                         st.success(f"✅ Opened in MPC-HC at {start_time:.1f}s")
                         return True
-                        
+
                     except Exception as e:
                         continue
-                
+
                 if not mpc_found:
-                    st.error("❌ MPC-HC not found. Please install MPC-HC or K-Lite Codec Pack")
-                    st.info("💡 Download from: https://mpc-hc.org/ or https://codecguide.com/download_k-lite_codec_pack_standard.htm")
+                    st.error(
+                        "❌ MPC-HC not found. Please install MPC-HC or K-Lite Codec Pack")
+                    st.info(
+                        "💡 Download from: https://mpc-hc.org/ or https://codecguide.com/download_k-lite_codec_pack_standard.htm")
                     return False
-                    
+
             else:
                 st.error(f"❌ Failed to get stream URL: {result.stderr}")
                 return False
-                
+
     except subprocess.TimeoutExpired:
         st.error("❌ Timeout getting video stream URL")
         return False
@@ -391,19 +477,22 @@ def show_mpc_video(pts_time, result_data, result_index):
         # Initialize session state for frame navigation
         if f'current_frame_{result_index}' not in st.session_state:
             # Get initial frame index from result data
-            video_id, frame_idx = get_frame_info_from_keyframe_path(result_data.get('path', ''))
+            video_id, frame_idx = get_frame_info_from_keyframe_path(
+                result_data.get('path', ''))
             st.session_state[f'current_frame_{result_index}'] = frame_idx if frame_idx else 1
-        
+
         # Get video_id from path parsing (e.g., L21_V001 from "L21/L21_V001/001.jpg")
-        parsed_video_id, parsed_frame_idx = get_frame_info_from_keyframe_path(result_data.get('path', ''))
-        video_id = parsed_video_id if parsed_video_id else result_data.get('video_id', 'Unknown')
-        
+        parsed_video_id, parsed_frame_idx = get_frame_info_from_keyframe_path(
+            result_data.get('path', ''))
+        video_id = parsed_video_id if parsed_video_id else result_data.get(
+            'video_id', 'Unknown')
+
         current_frame = st.session_state[f'current_frame_{result_index}']
         watch_url = result_data.get('watch_url', 'Not available')
-        
+
         # Header with video info
         st.markdown(f"### 🎥 MPC-HC Player - Result #{result_index + 1}")
-        
+
         # Video info columns
         col_info1, col_info2, col_info3 = st.columns(3)
         with col_info1:
@@ -412,37 +501,37 @@ def show_mpc_video(pts_time, result_data, result_index):
             st.markdown(f"**Start Time:** {pts_time:.1f}s")
         with col_info3:
             st.markdown(f"**Current File:** {current_frame}")
-        
+
         if watch_url != 'Not available':
             st.markdown(f"**Original URL:** {watch_url}")
-        
+
         # Calculate current time based on frame
         current_pts_time = get_pts_time_from_n(video_id, current_frame)
         if current_pts_time is None:
             current_pts_time = pts_time  # Fallback to original time
-        
+
         # CSV Export section
         st.markdown("---")
         st.markdown("### 💾 Export Current Frame")
-        
+
         col_csv1, col_csv2 = st.columns([2, 1])
         with col_csv1:
             # Use session state to persist the filename value
             csv_key = f"csv_filename_{result_index}"
             if csv_key not in st.session_state:
                 st.session_state[csv_key] = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            
+
             csv_filename_frame = st.text_input(
                 "CSV filename for frame export:",
                 placeholder="Enter CSV filename",
                 key=csv_key,
                 help="File to append current frame data"
             )
-            
+
             # Use the session state value if input is empty
             if not csv_filename_frame:
                 csv_filename_frame = st.session_state[csv_key]
-        
+
         with col_csv2:
             # Frame input for export
             export_frame = st.number_input(
@@ -453,7 +542,7 @@ def show_mpc_video(pts_time, result_data, result_index):
                 key=f"export_frame_input_{result_index}",
                 help="Enter frame number to export (default: current frame)"
             )
-        
+
         # VQA Answer input
         vqa_answer = st.text_input(
             "VQA Answer (optional):",
@@ -461,53 +550,56 @@ def show_mpc_video(pts_time, result_data, result_index):
             key=f"vqa_answer_{result_index}",
             help="Enter VQA answer if available, will be added as 3rd column in CSV"
         )
-        
+
         # Export button
         if st.button("📤 Add Frame to CSV", help=f"Add frame {export_frame} to CSV file", key=f"export_frame_{result_index}"):
             # Get real frame_idx from CSV mapping (n -> frame_idx)
             real_frame_idx = get_real_frame_idx_from_n(video_id, export_frame)
             if real_frame_idx is None:
                 real_frame_idx = export_frame  # Fallback to input value
-            
+
             # Prepare frame data for CSV: video_id, real_frame_idx, vqa_answer (if provided)
             frame_data = {
                 'video_id': video_id,  # L21_V001 from path parsing
                 'frame_idx': real_frame_idx,  # Real frame_idx from CSV mapping
             }
-            
+
             # Add VQA answer if provided
             if vqa_answer and vqa_answer.strip():
                 frame_data['vqa_answer'] = vqa_answer.strip()
-            
+
             success = append_to_csv(csv_filename_frame, frame_data)
             if success:
                 if vqa_answer and vqa_answer.strip():
-                    st.success(f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}, {vqa_answer.strip()}")
+                    st.success(
+                        f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}, {vqa_answer.strip()}")
                 else:
-                    st.success(f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}")
+                    st.success(
+                        f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}")
             else:
                 st.error("❌ Failed to export frame data")
-        
+
         # MPC-HC Quick Launch
         st.markdown("---")
         st.markdown("### 🎥 MPC-HC Player")
-        
+
         # Large MPC-HC button
         col_mpc1, col_mpc2, col_mpc3 = st.columns([1, 2, 1])
         with col_mpc2:
-            if st.button("🎬 Open Video in MPC-HC", 
-                        help=f"Open video in MPC-HC at frame {current_frame} ({current_pts_time:.1f}s)", 
-                        key=f"mpc_large_{result_index}",
-                        use_container_width=True):
+            if st.button("🎬 Open Video in MPC-HC",
+                         help=f"Open video in MPC-HC at frame {current_frame} ({current_pts_time:.1f}s)",
+                         key=f"mpc_large_{result_index}",
+                         use_container_width=True):
                 video_url = result_data.get('watch_url', '')
                 if video_url:
                     open_in_mpc(video_url, current_pts_time)
                 else:
                     st.error("❌ No video URL available")
-        
+
         # Quick info about current position
-        st.info(f"Will open at **Frame {current_frame}** (Time: **{current_pts_time:.1f}s**)")
-        
+        st.info(
+            f"Will open at **Frame {current_frame}** (Time: **{current_pts_time:.1f}s**)")
+
         # Setup instructions (expandable)
         with st.expander("🔧 Setup MPC-HC", expanded=False):
             st.markdown("""
@@ -522,13 +614,13 @@ def show_mpc_video(pts_time, result_data, result_index):
             - ✅ No ads or restrictions
             - ✅ Better playback controls and speed adjustment
             """)
-        
+
         # Show mapping info
         if 'watch_url' in result_data and result_data['watch_url']:
             st.success(f"✅ Using video URL from metadata")
         else:
             st.warning("⚠️ No video URL found in metadata.")
-        
+
     except Exception as e:
         st.error(f"Could not load video: {str(e)}")
 
@@ -564,6 +656,63 @@ def show_metadata_only(metadata, keyframe_index):
             with met_col3:
                 if 'group_id' in metadata:
                     st.metric("📁 Group ID", metadata['group_id'])
+
+        st.markdown("---")
+
+        # AI Generated Caption Section
+        st.markdown("### 🤖 AI Generated Caption")
+
+        # Try to get caption from API
+        image_path = metadata.get('path', '')
+        if image_path and os.path.exists(image_path):
+            with st.spinner("🔄 Generating caption..."):
+                caption_data = get_cached_caption(
+                    image_path, st.session_state.api_base_url)
+
+            if caption_data:
+                # Display caption with metadata
+                caption_text = caption_data['caption']
+                source_info = caption_data.get('source', 'unknown')
+                style_info = caption_data.get('style', 'dense')
+                processing_time = caption_data.get('processing_time', 0)
+
+                # Caption display with source info
+                st.markdown(f"""
+                <div class="info-card" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 4px solid #2196f3;">
+                    <div class="info-label">🤖 AI Caption ({source_info.upper()} - {style_info})</div>
+                    <div class="info-value" style="font-size: 1.1rem; line-height: 1.5; font-style: italic;">
+                        "{caption_text}"
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Caption metadata in smaller text
+                col_cap1, col_cap2 = st.columns(2)
+                with col_cap1:
+                    st.caption(f"🔧 Model: {source_info}")
+                with col_cap2:
+                    if processing_time > 0:
+                        st.caption(f"⏱️ Generated in: {processing_time:.0f}ms")
+
+            else:
+                # Show fallback message
+                st.markdown(f"""
+                <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
+                    <div class="info-label">🤖 AI Caption</div>
+                    <div class="info-value" style="color: #666; font-style: italic;">
+                        Caption not available - Vietnamese captioning service may be offline
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
+                <div class="info-label">🤖 AI Caption</div>
+                <div class="info-value" style="color: #666; font-style: italic;">
+                    Image file not found
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -927,7 +1076,7 @@ st.markdown("""
 # API Configuration
 with st.expander("⚙️ API Configuration", expanded=False):
     col_config1, col_config2 = st.columns(2)
-    
+
     with col_config1:
         api_url = st.text_input(
             "API Base URL",
@@ -936,7 +1085,7 @@ with st.expander("⚙️ API Configuration", expanded=False):
         )
         if api_url != st.session_state.api_base_url:
             st.session_state.api_base_url = api_url
-    
+
     with col_config2:
         csv_filename = st.text_input(
             "CSV Export Filename",
@@ -945,7 +1094,7 @@ with st.expander("⚙️ API Configuration", expanded=False):
         )
         if csv_filename != st.session_state.csv_filename:
             st.session_state.csv_filename = csv_filename
-    
+
     # Debug section
     if st.button("🔧 Debug Paths", help="Check file system paths for troubleshooting"):
         debug_paths()
@@ -1102,7 +1251,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
 
         # Keywords filter
         st.markdown("**🏷️ Keywords**")
-        
+
         # Keywords selection method
         keywords_method = st.radio(
             "Select keywords method:",
@@ -1110,7 +1259,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             horizontal=True,
             key="keywords_method"
         )
-        
+
         selected_keywords = []
         if keywords_method == "🔍 Search & Select" and available_keywords:
             # Search keywords
@@ -1119,11 +1268,13 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 placeholder="Type to filter available keywords",
                 key="keyword_search"
             )
-            
+
             # Filter keywords based on search
             if keyword_search:
-                filtered_keywords = [k for k in available_keywords if keyword_search.lower() in k.lower()]
-                display_keywords = filtered_keywords[:20]  # Limit to 20 for performance
+                filtered_keywords = [
+                    k for k in available_keywords if keyword_search.lower() in k.lower()]
+                # Limit to 20 for performance
+                display_keywords = filtered_keywords[:20]
             else:
                 display_keywords = available_keywords  # Show all by default
 
@@ -1133,10 +1284,10 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 help="Choose from detected keywords in metadata",
                 key="keywords_multiselect"
             )
-            
+
             # if len(available_keywords) > 20:
             #     st.caption(f"📊 Showing {len(display_keywords)} of {len(available_keywords)} keywords. Use search to find more.")
-                
+
         else:
             # Manual input fallback
             keywords_input = st.text_input(
@@ -1146,8 +1297,9 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 key="keywords_manual"
             )
             if keywords_input.strip():
-                selected_keywords = [k.strip() for k in keywords_input.split(',') if k.strip()]
-        
+                selected_keywords = [
+                    k.strip() for k in keywords_input.split(',') if k.strip()]
+
         # Keywords mode
         if selected_keywords:
             keywords_mode = st.radio(
@@ -1171,7 +1323,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
     with col_meta2:
         # Title/Description filter
         st.markdown("**🔍 Text Search in Metadata**")
-        
+
         # Title filter with mode
         title_contains = st.text_input(
             "Title contains",
@@ -1179,7 +1331,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             help="Enter search terms separated by commas for multiple term search",
             key="title_filter"
         )
-        
+
         # Always show title mode
         title_mode = st.radio(
             "Title matching mode:",
@@ -1188,7 +1340,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             key="title_mode",
             horizontal=True
         )
-        
+
         # Description filter with mode
         description_contains = st.text_input(
             "Description contains",
@@ -1196,7 +1348,7 @@ with st.expander("🔍 Metadata Filters", expanded=False):
             help="Enter search terms separated by commas for multiple term search",
             key="desc_filter"
         )
-        
+
         # Always show description mode
         description_mode = st.radio(
             "Description matching mode:",
@@ -1244,8 +1396,9 @@ if use_metadata_filter:
     if 'keywords_multiselect' in st.session_state and st.session_state.keywords_multiselect:
         final_keywords = st.session_state.keywords_multiselect
     elif 'keywords_manual' in st.session_state and st.session_state.keywords_manual.strip():
-        final_keywords = [k.strip() for k in st.session_state.keywords_manual.split(',') if k.strip()]
-    
+        final_keywords = [
+            k.strip() for k in st.session_state.keywords_manual.split(',') if k.strip()]
+
     if final_keywords:
         metadata_filter["keywords"] = final_keywords
         # Only add mode if keywords are selected and mode exists
@@ -1261,31 +1414,35 @@ if use_metadata_filter:
     # Title with mode support
     if title_contains.strip():
         # Always send both formats for maximum compatibility
-        metadata_filter["title_contains"] = title_contains.strip()  # Original format
-        
+        # Original format
+        metadata_filter["title_contains"] = title_contains.strip()
+
         # Also send as terms array
         if ',' in title_contains:
-            title_terms = [x.strip() for x in title_contains.split(',') if x.strip()]
+            title_terms = [x.strip()
+                           for x in title_contains.split(',') if x.strip()]
         else:
             title_terms = [title_contains.strip()]
-        
+
         metadata_filter["title_terms"] = title_terms
         if 'title_mode' in st.session_state:
             metadata_filter["title_mode"] = st.session_state.title_mode
         else:
             metadata_filter["title_mode"] = "any"
 
-    # Description with mode support  
+    # Description with mode support
     if description_contains.strip():
         # Always send both formats for maximum compatibility
-        metadata_filter["description_contains"] = description_contains.strip()  # Original format
-        
+        # Original format
+        metadata_filter["description_contains"] = description_contains.strip()
+
         # Also send as terms array
         if ',' in description_contains:
-            description_terms = [x.strip() for x in description_contains.split(',') if x.strip()]
+            description_terms = [
+                x.strip() for x in description_contains.split(',') if x.strip()]
         else:
             description_terms = [description_contains.strip()]
-        
+
         metadata_filter["description_terms"] = description_terms
         if 'description_mode' in st.session_state:
             metadata_filter["description_mode"] = st.session_state.description_mode
@@ -1300,39 +1457,183 @@ if use_metadata_filter:
         # Convert date to DD/MM/YYYY format
         metadata_filter["date_to"] = date_to.strftime("%d/%m/%Y")
 
+# Rerank Options Section
+st.markdown("### ⚡ Rerank Options")
+
+# Initialize rerank variables with defaults
+enable_rerank = False
+rerank_superglobal_enabled = False
+rerank_caption_enabled = False
+rerank_llm_enabled = False
+rerank_final_top_k = 10
+sg_top_t = 50
+cap_top_t = 20
+llm_top_t = 20
+
+with st.expander("🎯 Multi-Stage Reranking", expanded=False):
+    st.markdown(
+        "**✅ Enable Multi-Stage Reranking**")
+
+    # Enable/disable reranking
+    enable_rerank = st.checkbox(
+        "Apply Multi-Stage Reranking",
+        value=False,
+        help="Apply advanced reranking pipeline (SuperGlobal + Caption + LLM) to improve result quality"
+    )
+
+    if enable_rerank:
+        col_rerank1, col_rerank2 = st.columns(2)
+
+        with col_rerank1:
+            st.markdown("**🎯 SuperGlobal Reranking**")
+            rerank_superglobal_enabled = st.checkbox(
+                "Enable SuperGlobal rerank",
+                value=True,
+                help="Fast reranking using global features"
+            )
+
+            if rerank_superglobal_enabled:
+                rerank_superglobal_weight = st.slider(
+                    "SuperGlobal weight",
+                    min_value=0.0, max_value=1.0, value=0.4, step=0.1,
+                    help="Weight for SuperGlobal similarity scores"
+                )
+                sg_top_t = st.slider(
+                    "SuperGlobal top_t",
+                    min_value=50, max_value=500, value=50, step=25,
+                    help="Number of candidates for SuperGlobal reranking"
+                )
+
+            st.markdown("**🏷️ Caption Reranking**")
+            rerank_caption_enabled = st.checkbox(
+                "Enable Caption rerank",
+                value=True,
+                help="Rerank using Vietnamese image captions"
+            )
+
+            if rerank_caption_enabled:
+                rerank_caption_weight = st.slider(
+                    "Caption weight",
+                    min_value=0.0, max_value=1.0, value=0.4, step=0.1,
+                    help="Weight for caption similarity scores"
+                )
+                cap_top_t = st.slider(
+                    "Caption top_t",
+                    min_value=10, max_value=100, value=20, step=5,
+                    help="Number of candidates for caption reranking"
+                )
+                rerank_caption_timeout = st.slider(
+                    "Caption timeout (seconds)",
+                    min_value=10, max_value=120, value=30, step=5,
+                    help="Timeout for caption generation"
+                )
+
+        with col_rerank2:
+            st.markdown("**🧠 LLM Reranking**")
+            rerank_llm_enabled = st.checkbox(
+                "Enable LLM rerank",
+                value=False,
+                help="High-quality reranking using Large Language Models"
+            )
+
+            if rerank_llm_enabled:
+                rerank_llm_weight = st.slider(
+                    "LLM weight",
+                    min_value=0.0, max_value=1.0, value=0.2, step=0.1,
+                    help="Weight for LLM similarity scores"
+                )
+                llm_top_t = st.slider(
+                    "LLM top_t",
+                    min_value=5, max_value=50, value=20, step=5,
+                    help="Number of candidates for LLM reranking"
+                )
+                rerank_llm_timeout = st.slider(
+                    "LLM timeout (seconds)",
+                    min_value=30, max_value=300, value=60, step=10,
+                    help="Timeout for LLM processing"
+                )
+
+            st.markdown("**⚙️ Advanced Settings**")
+            rerank_cache_enabled = st.checkbox(
+                "Enable result caching",
+                value=True,
+                help="Cache reranking results for faster repeated queries"
+            )
+
+            rerank_fallback_enabled = st.checkbox(
+                "Enable graceful fallback",
+                value=True,
+                help="Fallback to simpler methods if advanced reranking fails"
+            )
+
+            st.markdown("**📊 Final Results**")
+            rerank_final_top_k = st.slider(
+                "Final top_k results",
+                min_value=5, max_value=100, value=10, step=5,
+                help="Final number of results after reranking"
+            )
+
+        # Show rerank configuration summary
+        if any([rerank_superglobal_enabled, rerank_caption_enabled, rerank_llm_enabled]):
+            st.markdown("---")
+            st.markdown("**🎯 Rerank Pipeline Summary:**")
+
+            stages = []
+            if rerank_superglobal_enabled:
+                stages.append(
+                    f"SuperGlobal (top_t: {sg_top_t})")
+            if rerank_caption_enabled:
+                stages.append(
+                    f"Caption (top_t: {cap_top_t})")
+            if rerank_llm_enabled:
+                stages.append(
+                    f"LLM (top_t: {llm_top_t})")
+
+            for i, stage in enumerate(stages, 1):
+                st.info(f"**Stage {i}:** {stage}")
+
 # Object Filter Section
 st.markdown("### 🎯 Object Filters")
 st.markdown("Filter keyframes by detected objects in the images")
 
 with st.expander("🔍 Object Detection Filters", expanded=False):
-    col_obj1, col_obj2 = st.columns([2, 1])
+    # Enable/disable object filtering
+    st.markdown("**✅ Enable Object Filtering**")
+    use_object_filter = st.checkbox(
+        "Apply object filters to search results",
+        value=False,
+        help="When enabled, search results will be filtered by detected objects below"
+    )
 
-    with col_obj1:
-        # Load available objects from JSON file
-        objects_data = load_available_objects()
-        available_objects = objects_data['objects']
-        object_categories = objects_data['categories']
-        objects_metadata = objects_data['metadata']
+    if use_object_filter:
+        col_obj1, col_obj2 = st.columns([2, 1])
 
-        # Display source information
-        # if 'source' in objects_metadata and objects_metadata['source'] == 'fallback_coco_objects':
-        #     st.info(
-        #         "🔄 Using default COCO objects. Run migration script to load detected objects.")
-        # else:
-        #     st.success(
-        #         f"✅ Loaded {len(available_objects)} objects from detection results")
-        #     if 'migration_date' in objects_metadata:
-        #         st.caption(f"📅 Updated: {objects_metadata['migration_date']}")
+        with col_obj1:
+            # Load available objects from JSON file
+            objects_data = load_available_objects()
+            available_objects = objects_data['objects']
+            object_categories = objects_data['categories']
+            objects_metadata = objects_data['metadata']
 
-        # Smart Object Selection with Multiple Methods
-        st.markdown("**🎯 Object Selection Method**")
+            # Display source information
+            # if 'source' in objects_metadata and objects_metadata['source'] == 'fallback_coco_objects':
+            #     st.info(
+            #         "🔄 Using default COCO objects. Run migration script to load detected objects.")
+            # else:
+            #     st.success(
+            #         f"✅ Loaded {len(available_objects)} objects from detection results")
+            #     if 'migration_date' in objects_metadata:
+            #         st.caption(f"📅 Updated: {objects_metadata['migration_date']}")
 
-        selection_method = st.radio(
-            "Choose how to select objects:",
-            ["📋 Select by Category", "🗂️ Browse All Objects"],
-            horizontal=False,
-            key="object_selection_method"
-        )
+            # Smart Object Selection with Multiple Methods
+            st.markdown("**🎯 Object Selection Method**")
+
+            selection_method = st.radio(
+                "Choose how to select objects:",
+                ["📋 Select by Category", "🗂️ Browse All Objects"],
+                horizontal=False,
+                key="object_selection_method"
+            )
 
         # Initialize session state for selected objects
         if 'selected_objects_list' not in st.session_state:
@@ -1608,50 +1909,44 @@ with st.expander("🔍 Object Detection Filters", expanded=False):
 
         # Final selection for the filter (for backward compatibility)
         # Limit to 20
-        selected_objects = st.session_state.selected_objects_list[:20]
+        selected_objects = st.session_state.selected_objects_list[:20] if hasattr(
+            st.session_state, 'selected_objects_list') else []
 
-    with col_obj2:
-        # Filter mode
-        st.markdown("**⚙️ Filter Mode**")
-        object_filter_mode = st.radio(
-            "Mode:",
-            ["any", "all"],
-            help="'any': keyframe contains at least one object, 'all': keyframe contains all objects",
-            key="object_mode"
-        )
+        with col_obj2:
+            # Filter mode
+            st.markdown("**⚙️ Filter Mode**")
+            object_filter_mode = st.radio(
+                "Mode:",
+                ["any", "all"],
+                help="'any': keyframe contains at least one object, 'all': keyframe contains all objects",
+                key="object_mode"
+            )
 
-        # Enable/disable object filtering
-        st.markdown("**✅ Enable Object Filtering**")
-        use_object_filter = st.checkbox(
-            "Apply object filters to search results",
-            value=False,
-            help="When enabled, search results will be filtered by detected objects",
-            key="use_object_filter"
-        )
+            # Show selected objects count and info
+            if selected_objects:
+                st.info(f"🎯 Selected: {len(selected_objects)} objects")
 
-        # Show selected objects count and info
-        if selected_objects:
-            st.info(f"🎯 Selected: {len(selected_objects)} objects")
+                # Show breakdown of object types
+                detected_count = sum(
+                    1 for obj in selected_objects if obj in available_objects)
+                custom_count = len(selected_objects) - detected_count
 
-            # Show breakdown of object types
-            detected_count = sum(
-                1 for obj in selected_objects if obj in available_objects)
-            custom_count = len(selected_objects) - detected_count
-
-            col_info1, col_info2, col_info3 = st.columns(3)
-            with col_info1:
-                st.metric("🎯 Detected Objects", detected_count)
-            with col_info2:
-                st.metric("✨ Custom Objects", custom_count)
-            with col_info3:
-                st.metric("📊 Total", len(selected_objects))
+                col_info1, col_info2, col_info3 = st.columns(3)
+                with col_info1:
+                    st.metric("🎯 Detected", detected_count)
+                with col_info2:
+                    st.metric("✨ Custom", custom_count)
+                with col_info3:
+                    st.metric("📊 Total", len(selected_objects))
+            else:
+                selected_objects = []
 
 # Parse object filters
 object_filter = {}
-if use_object_filter and selected_objects:
+if use_object_filter and 'selected_objects' in locals() and selected_objects:
     object_filter = {
         "objects": selected_objects,
-        "mode": object_filter_mode
+        "mode": object_filter_mode if 'object_filter_mode' in locals() else "any"
     }
 
 # Search button and logic
@@ -1668,7 +1963,7 @@ with col_search1:
             include_groups = []
         if 'include_videos' not in locals():
             include_videos = []
-            
+
         if not query.strip():
             st.error("Please enter a search query")
         elif len(query) > 1000:
@@ -1688,9 +1983,11 @@ with col_search1:
                         if include_groups or include_videos:
                             filter_parts = []
                             if include_groups:
-                                filter_parts.append(f"groups: {include_groups}")
+                                filter_parts.append(
+                                    f"groups: {include_groups}")
                             if include_videos:
-                                filter_parts.append(f"videos: {include_videos}")
+                                filter_parts.append(
+                                    f"videos: {include_videos}")
                             st.info(f"✅ Including {', '.join(filter_parts)}")
 
                     # Determine endpoint and base payload based on search mode
@@ -1704,7 +2001,8 @@ with col_search1:
 
                     elif search_mode == "Exclude Groups":
                         if not exclude_groups:
-                            st.warning("⚠️ No groups to exclude specified. Using default search.")
+                            st.warning(
+                                "⚠️ No groups to exclude specified. Using default search.")
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
                             payload = {
                                 "query": query,
@@ -1722,7 +2020,8 @@ with col_search1:
 
                     else:  # Include Groups & Videos
                         if not include_groups and not include_videos:
-                            st.warning("⚠️ No groups or videos to include specified. Using default search.")
+                            st.warning(
+                                "⚠️ No groups or videos to include specified. Using default search.")
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
                             payload = {
                                 "query": query,
@@ -1739,23 +2038,77 @@ with col_search1:
                                 "include_videos": include_videos
                             }
 
-                    # If metadata filter or object filter is enabled, use metadata-filter endpoint regardless of search mode
-                    if (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
+                    # Add rerank parameters if enabled
+                    params = None
+                    if enable_rerank:
+                        # Use advanced search endpoint for reranking
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/advanced"
+
+                        # Build query parameters for GET request
+                        params = {
+                            "q": query,
+                            "top_k": rerank_final_top_k,
+                            "score_threshold": current_threshold,
+                            "rerank": 1,
+                            "rerank_mode": "custom"
+                        }
+
+                        # Add individual rerank methods
+                        if rerank_superglobal_enabled:
+                            params["rr_superglobal"] = 1
+                            params["sg_top_t"] = sg_top_t
+                        else:
+                            params["rr_superglobal"] = 0
+
+                        if rerank_caption_enabled:
+                            params["rr_caption"] = 1
+                            params["cap_top_t"] = cap_top_t
+                        else:
+                            params["rr_caption"] = 0
+
+                        if rerank_llm_enabled:
+                            params["rr_llm"] = 1
+                            params["llm_top_t"] = llm_top_t
+                        else:
+                            params["rr_llm"] = 0
+
+                        # Show rerank info
+                        rerank_methods = []
+                        if params.get("rr_superglobal"):
+                            rerank_methods.append("SuperGlobal")
+                        if params.get("rr_caption"):
+                            rerank_methods.append("Caption")
+                        if params.get("rr_llm"):
+                            rerank_methods.append("LLM")
+
+                        st.info(
+                            f"⚡ Reranking enabled: {' + '.join(rerank_methods)} → {params['top_k']} results")
+
+                        # For rerank, we don't use metadata/object filters (advanced endpoint doesn't support them)
+                        if (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
+                            st.warning(
+                                "⚠️ Metadata and object filters are not supported with reranking. Using rerank only.")
+
+                    # If not using reranking but have metadata/object filters, use metadata-filter endpoint
+                    elif (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
                         endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/metadata-filter"
 
                         filter_info = []
-                        
+
                         # Add search mode filters to the payload
                         if search_mode == "Exclude Groups" and exclude_groups:
                             payload["exclude_groups"] = exclude_groups
-                            filter_info.append(f"exclude groups: {exclude_groups}")
+                            filter_info.append(
+                                f"exclude groups: {exclude_groups}")
                         elif search_mode == "Include Groups & Videos":
                             if include_groups:
                                 payload["include_groups"] = include_groups
-                                filter_info.append(f"include groups: {include_groups}")
+                                filter_info.append(
+                                    f"include groups: {include_groups}")
                             if include_videos:
                                 payload["include_videos"] = include_videos
-                                filter_info.append(f"include videos: {include_videos}")
+                                filter_info.append(
+                                    f"include videos: {include_videos}")
 
                         if metadata_filter:
                             payload["metadata_filter"] = metadata_filter
@@ -1775,14 +2128,24 @@ with col_search1:
                             f"🎯 Applying filters: {' | '.join(filter_info)}")
 
                     # Show the final endpoint being used
-                    endpoint_display = endpoint.split('/')[-1]  # Just show the last part
+                    endpoint_display = endpoint.split(
+                        '/')[-1]  # Just show the last part
                     st.info(f"🔗 Using endpoint: {endpoint_display}")
 
-                    response = requests.post(
-                        endpoint,
-                        json=payload,
-                        headers={"Content-Type": "application/json"}
-                    )
+                    # Use GET for rerank with params, POST for regular search with JSON payload
+                    if params is not None:
+                        # GET request for rerank endpoint
+                        response = requests.get(
+                            endpoint,
+                            params=params
+                        )
+                    else:
+                        # POST request for regular search endpoints
+                        response = requests.post(
+                            endpoint,
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
 
                     if response.status_code == 200:
                         results = response.json()
@@ -1857,7 +2220,7 @@ if st.session_state.search_results:
     # CSV Export Configuration (before results)
     with st.expander("💾 CSV Export Settings", expanded=False):
         col_csv1, col_csv2 = st.columns([2, 1])
-        
+
         with col_csv1:
             new_filename = st.text_input(
                 "📁 CSV Filename",
@@ -1866,7 +2229,7 @@ if st.session_state.search_results:
             )
             if new_filename != st.session_state.csv_filename:
                 st.session_state.csv_filename = new_filename
-        
+
         with col_csv2:
             st.markdown("**📊 Export Options**")
             st.markdown("• Individual: Use 'Add to CSV' buttons")
@@ -1893,14 +2256,16 @@ if st.session_state.search_results:
             st.metric("Best Score", f"{max_score:.3f}")
         else:
             st.metric("Best Score", "N/A")
-    
+
     with col_metric4:
         # Export all results button
         if st.button("📤 Export All to CSV", help=f"Export all {len(results_list)} results to {st.session_state.csv_filename}", use_container_width=True):
             if results_list:
-                success, count = export_all_results_to_csv(st.session_state.csv_filename, results_list)
+                success, count = export_all_results_to_csv(
+                    st.session_state.csv_filename, results_list)
                 if success:
-                    st.success(f"✅ Exported {count} results to {st.session_state.csv_filename}")
+                    st.success(
+                        f"✅ Exported {count} results to {st.session_state.csv_filename}")
                 else:
                     st.error("❌ Failed to export results")
             else:
@@ -1915,22 +2280,23 @@ if st.session_state.search_results:
     # Display results in a grid
     for i, result in enumerate(sorted_results):
         # Extract frame info for each result
-        video_id, frame_idx = get_frame_info_from_keyframe_path(result.get('path', ''))
+        video_id, frame_idx = get_frame_info_from_keyframe_path(
+            result.get('path', ''))
         pts_time = None
         if video_id and frame_idx is not None:
             pts_time = get_pts_time_from_n(video_id, frame_idx)
-        
+
         # Add extracted info to result for display and CSV export
         result['frame_idx'] = frame_idx  # n (filename number like 1, 2, 3...)
         result['pts_time'] = pts_time
-        
+
         # Get real frame_idx for CSV export
         if video_id and frame_idx is not None:
             real_frame_idx = get_real_frame_idx_from_n(video_id, frame_idx)
             result['real_frame_idx'] = real_frame_idx
         else:
             result['real_frame_idx'] = None
-        
+
         with st.container():
             col_img, col_info = st.columns([1, 3])
 
@@ -1952,20 +2318,22 @@ if st.session_state.search_results:
 
                     # New buttons row for Video and CSV export
                     col_btn3, col_btn4 = st.columns(2)
-                    
+
                     with col_btn3:
                         # MPC-HC button (only show if we have pts_time)
                         if pts_time is not None:
                             if st.button(f"🎥 MPC-HC", key=f"mpc_{i}", help=f"Open Video in MPC-HC at {pts_time:.1f}s", use_container_width=True):
                                 show_mpc_video(pts_time, result, i)
                         else:
-                            st.button(f"🎥 MPC-HC", key=f"mpc_{i}", help="pts_time not available", disabled=True, use_container_width=True)
-                    
+                            st.button(
+                                f"🎥 MPC-HC", key=f"mpc_{i}", help="pts_time not available", disabled=True, use_container_width=True)
+
                     with col_btn4:
                         # Append to CSV button
                         if st.button(f"💾 Add to CSV", key=f"csv_{i}", help=f"Add this result to {st.session_state.csv_filename}", use_container_width=True):
                             if append_to_csv(st.session_state.csv_filename, result):
-                                st.success(f"✅ Added to {st.session_state.csv_filename}")
+                                st.success(
+                                    f"✅ Added to {st.session_state.csv_filename}")
                             else:
                                 st.error("❌ Failed to add to CSV")
 

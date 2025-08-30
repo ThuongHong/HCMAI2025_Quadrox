@@ -1,3 +1,6 @@
+from core.logger import SimpleLogger
+from core.lifespan import lifespan
+from router import keyframe_api, agent_api, caption_api
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,10 +10,6 @@ import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-
-from router import keyframe_api, agent_api
-from core.lifespan import lifespan
-from core.logger import SimpleLogger
 
 logger = SimpleLogger(__name__)
 
@@ -69,7 +68,7 @@ app = FastAPI(
 #
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,6 +76,8 @@ app.add_middleware(
 
 app.include_router(keyframe_api.router, prefix="/api/v1")
 app.include_router(agent_api.router, prefix='/api/v1')
+app.include_router(caption_api.router)
+
 
 @app.get("/", tags=["root"])
 async def root():
@@ -132,11 +133,11 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,  
+        reload=True,
         log_level="info"
     )

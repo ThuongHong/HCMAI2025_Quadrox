@@ -23,7 +23,17 @@ class RerankPipeline:
     def __init__(
         self,
         model_service=None,
-        cache_base_dir: str = "./cache"
+        cache_base_dir: str = "./cache",
+        # Caption ranker configuration
+        caption_model_name: str = "synthetic",
+        caption_vintern_model_path: str = "./models/Vintern-1B-v3_5",
+        caption_style: str = "dense",
+        caption_max_new_tokens: int = 64,
+        caption_allow_on_demand: bool = False,
+        caption_alpha: float = 1.0,
+        caption_beta: float = 0.25,
+        caption_workers: int = 2,
+        multilingual_model_path: str = "./models/clip-multilingual/clip-ViT-B-32-multilingual-v1"
     ):
         """
         Initialize reranking pipeline.
@@ -31,14 +41,32 @@ class RerankPipeline:
         Args:
             model_service: Service for embeddings and model access
             cache_base_dir: Base directory for caching
+            caption_model_name: Caption model type (synthetic, vintern_cpu)
+            caption_vintern_model_path: Path to Vintern model
+            caption_style: Caption style for Vintern
+            caption_max_new_tokens: Max tokens for caption generation
+            caption_allow_on_demand: Allow on-demand caption generation
+            caption_alpha: CLIP score weight
+            caption_beta: Caption score weight
+            caption_workers: Max workers for caption generation
+            multilingual_model_path: Path to multilingual text embedding model
         """
         self.model_service = model_service
 
         # Initialize reranking components
         self.superglobal = SuperGlobalReranker(model_service)
         self.caption_ranker = CaptionRanker(
-            model_service,
-            cache_dir=f"{cache_base_dir}/captions"
+            model_service=model_service,
+            cache_dir=f"{cache_base_dir}/captions",
+            model_name=caption_model_name,
+            max_workers=caption_workers,
+            vintern_model_path=caption_vintern_model_path,
+            caption_style=caption_style,
+            max_new_tokens=caption_max_new_tokens,
+            allow_on_demand=caption_allow_on_demand,
+            alpha=caption_alpha,
+            beta=caption_beta,
+            multilingual_model_path=multilingual_model_path
         )
         self.llm_ranker = LLMRanker(
             model_service,
@@ -46,7 +74,8 @@ class RerankPipeline:
         )
         self.ensemble = EnsembleScorer()
 
-        logger.info("RerankPipeline initialized")
+        logger.info(
+            f"RerankPipeline initialized with caption_model={caption_model_name}")
 
     async def rerank_textual_kis(
         self,

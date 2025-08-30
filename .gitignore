@@ -212,3 +212,5 @@ data/
 /tests
 *.csv
 *.zip
+/models/clip-multilingual
+/models/Vintern-1B-v3_5
