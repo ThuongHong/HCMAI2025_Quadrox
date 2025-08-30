@@ -4,12 +4,11 @@ import requests
 import json
 import pandas as pd
 import os
+import subprocess
+import csv
 from pathlib import Path
 from datetime import datetime
 import re
-
-# Default YouTube video ID for fallback
-DEFAULT_YOUTUBE_ID = "dQw4w9WgXcQ"
 
 # Page configuration
 st.set_page_config(
@@ -53,7 +52,7 @@ def debug_paths():
     video_id, frame_idx = get_frame_info_from_keyframe_path(test_path)
     
     if video_id and frame_idx is not None:
-        pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+        pts_time = get_pts_time_from_n(video_id, frame_idx)
         if pts_time is not None:
             st.success("✅ Complete parsing and lookup workflow is working!")
             st.write(f"Sample: `{video_id}` frame `{frame_idx}` → `{pts_time}s`")
@@ -99,8 +98,8 @@ def get_frame_info_from_keyframe_path(keyframe_path):
     except Exception as e:
         return None, None
 
-def get_pts_time_from_frame_idx(video_id, frame_idx):
-    """Get pts_time from frame_idx using map-keyframes CSV"""
+def get_real_frame_idx_from_n(video_id, n):
+    """Get real frame_idx from n using map-keyframes CSV"""
     try:
         # Try multiple path combinations to find the map file
         possible_paths = [
@@ -120,9 +119,39 @@ def get_pts_time_from_frame_idx(video_id, frame_idx):
         
         if map_file_path and map_file_path.exists():
             df = pd.read_csv(map_file_path)
-            # The frame_idx from our parsing (e.g., 1 from "001.jpg") corresponds to the 'n' column
-            # Find the row where 'n' matches our frame_idx
-            matching_row = df[df['n'] == frame_idx]
+            # Find the row where 'n' matches our n value
+            matching_row = df[df['n'] == n]
+            if not matching_row.empty:
+                return int(matching_row.iloc[0]['frame_idx'])
+        
+        return None
+    except Exception as e:
+        return None
+
+def get_pts_time_from_n(video_id, n):
+    """Get pts_time from filename number (n) using map-keyframes CSV"""
+    try:
+        # Try multiple path combinations to find the map file
+        possible_paths = [
+            Path("../resources/map-keyframes") / f"{video_id}.csv",
+            Path("resources/map-keyframes") / f"{video_id}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id}.csv",
+            Path("../resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("resources/map-keyframes") / f"{video_id.upper()}.csv",
+            Path("d:/Study/HCMAI2025_Quadrox/resources/map-keyframes") / f"{video_id.upper()}.csv",
+        ]
+        
+        map_file_path = None
+        for path in possible_paths:
+            if path.exists():
+                map_file_path = path
+                break
+        
+        if map_file_path and map_file_path.exists():
+            df = pd.read_csv(map_file_path)
+            # The n from our parsing (e.g., 1 from "001.jpg") corresponds to the 'n' column
+            # Find the row where 'n' matches our n value
+            matching_row = df[df['n'] == n]
             if not matching_row.empty:
                 return float(matching_row.iloc[0]['pts_time'])
         
@@ -130,59 +159,36 @@ def get_pts_time_from_frame_idx(video_id, frame_idx):
     except Exception as e:
         return None
 
-def get_youtube_embed_url(pts_time, result_data=None):
-    """Generate YouTube embed URL with start time using result metadata"""
-    youtube_url = None
-    
-    # Get YouTube URL from result metadata
-    if result_data and 'watch_url' in result_data:
-        youtube_url = result_data['watch_url']
-    
-    # Extract video ID from YouTube URL
-    if youtube_url:
-        # Handle different YouTube URL formats
-        if 'youtube.com/watch?v=' in youtube_url:
-            video_id_match = re.search(r'v=([^&]+)', youtube_url)
-            if video_id_match:
-                actual_youtube_id = video_id_match.group(1)
-                return f"https://www.youtube.com/embed/{actual_youtube_id}?start={int(pts_time)}&autoplay=1"
-        elif 'youtu.be/' in youtube_url:
-            video_id_match = re.search(r'youtu\.be/([^?]+)', youtube_url)
-            if video_id_match:
-                actual_youtube_id = video_id_match.group(1)
-                return f"https://www.youtube.com/embed/{actual_youtube_id}?start={int(pts_time)}&autoplay=1"
-    
-    # Fallback to default video if no URL found
-    return f"https://www.youtube.com/embed/{DEFAULT_YOUTUBE_ID}?start={int(pts_time)}&autoplay=1"
-
 def append_to_csv(filename, result_data):
-    """Append a single result to CSV file"""
+    """Append a single result to CSV file in format: video_id, frame_idx, [vqa_answer]"""
     try:
+        output_dir = Path("../output")
+        output_dir.mkdir(exist_ok=True)
+
         # Ensure the filename has .csv extension
+        filename = str(output_dir / filename)
         if not filename.endswith('.csv'):
-            filename += '.csv'
+            filename += '.csv'    
         
-        # Prepare data row
+        # Data row: video_id, real frame_idx, and optionally vqa_answer
         row_data = {
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'path': result_data.get('path', ''),
-            'score': result_data.get('score', 0),
             'video_id': result_data.get('video_id', ''),
-            'group_id': result_data.get('group_id', ''),
-            'frame_idx': result_data.get('frame_idx', ''),
-            'pts_time': result_data.get('pts_time', ''),
-            'title': result_data.get('title', ''),
-            'author': result_data.get('author', ''),
+            'frame_idx': result_data.get('real_frame_idx', result_data.get('frame_idx', '')),  # Use real_frame_idx if available
         }
         
-        # Create DataFrame
-        df = pd.DataFrame([row_data])
-        
-        # Check if file exists to decide header
-        file_exists = os.path.exists(filename)
-        
-        # Append to CSV
-        df.to_csv(filename, mode='a', header=not file_exists, index=False)
+        # Add VQA answer if provided
+        vqa_text = ""
+        if 'vqa_answer' in result_data and result_data['vqa_answer']:
+            vqa_text = result_data['vqa_answer'].strip()
+
+        # Write CSV manually to control exact format
+        with open(filename, 'a', encoding='utf-8', newline='') as f:
+            if vqa_text:
+                # Format: video_id,frame_idx,"vqa_answer"
+                f.write(f'{row_data["video_id"]},{row_data["frame_idx"]},"{vqa_text}"\n')
+            else:
+                # Format: video_id,frame_idx
+                f.write(f'{row_data["video_id"]},{row_data["frame_idx"]}\n')
         
         return True
     except Exception as e:
@@ -190,38 +196,30 @@ def append_to_csv(filename, result_data):
         return False
 
 def export_all_results_to_csv(filename, results_list):
-    """Export all search results to CSV file"""
+    """Export all search results to CSV file in simple format: video_id, frame_idx"""
     try:
         if not filename.endswith('.csv'):
             filename += '.csv'
         
-        # Prepare all data
+        # Prepare simple data
         all_data = []
-        for i, result in enumerate(results_list):
-            # Extract frame info
-            video_id, frame_idx = get_frame_info_from_keyframe_path(result.get('path', ''))
-            pts_time = None
-            if video_id and frame_idx is not None:
-                pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+        for result in results_list:
+            # Extract frame info from path (e.g., L21_V001 from "L21/L21_V001/001.jpg")
+            video_id, n = get_frame_info_from_keyframe_path(result.get('path', ''))
             
-            row_data = {
-                'rank': i + 1,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'path': result.get('path', ''),
-                'score': result.get('score', 0),
-                'video_id': result.get('video_id', ''),
-                'group_id': result.get('group_id', ''),
-                'frame_idx': frame_idx,
-                'pts_time': pts_time,
-                'title': result.get('title', ''),
-                'author': result.get('author', ''),
-                'keywords': ', '.join(result.get('keywords', [])) if isinstance(result.get('keywords'), list) else str(result.get('keywords', '')),
-            }
-            all_data.append(row_data)
+            if video_id and n:
+                # Get real frame_idx from CSV mapping
+                real_frame_idx = get_real_frame_idx_from_n(video_id, n)
+                if real_frame_idx is not None:
+                    row_data = {
+                        'video_id': video_id,  # Use parsed video_id from path
+                        'frame_idx': real_frame_idx,  # Use real frame_idx from mapping
+                    }
+                    all_data.append(row_data)
         
-        # Create DataFrame and save
+        # Create DataFrame and save without header
         df = pd.DataFrame(all_data)
-        df.to_csv(filename, index=False)
+        df.to_csv(filename, index=False, header=False)
         
         return True, len(all_data)
     except Exception as e:
@@ -306,42 +304,218 @@ def load_available_keywords():
 
 # Functions
 
-
-@st.dialog("YouTube Video Player", width="large")
-def show_youtube_video(pts_time, result_data, result_index):
-    """Display YouTube video in dialog with start time"""
+def open_in_mpc(video_url, start_time=0):
+    """Open video in MPC-HC using yt-dlp"""
     try:
-        youtube_url = get_youtube_embed_url(pts_time, result_data)
-        video_id = result_data.get('video_id', 'Unknown')
+        # Check if yt-dlp is available
+        try:
+            subprocess.run(['yt-dlp', '--version'], capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            st.error("❌ yt-dlp not found. Please install: pip install yt-dlp")
+            st.info("💡 Or download from: https://github.com/yt-dlp/yt-dlp/releases")
+            return False
+        
+        # Get direct stream URL
+        with st.spinner("🔍 Getting video stream URL..."):
+            cmd = [
+                'yt-dlp', 
+                '-g', 
+                '--format', 'best[height<=720]/best',  # Prefer 720p or best available
+                '--no-warnings',
+                video_url
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                stream_url = result.stdout.strip()
+                
+                # Try different MPC-HC paths
+                mpc_paths = [
+                    r'C:\Program Files\MPC-HC\mpc-hc64.exe',
+                    r'C:\Program Files (x86)\MPC-HC\mpc-hc.exe',
+                    r'C:\Program Files\K-Lite Codec Pack\MPC-HC64\mpc-hc64.exe',
+                    r'C:\Program Files (x86)\K-Lite Codec Pack\MPC-HC\mpc-hc.exe',
+                    'mpc-hc64.exe',  # If in PATH
+                    'mpc-hc.exe'     # If in PATH
+                ]
+                
+                mpc_found = False
+                for mpc_path in mpc_paths:
+                    try:
+                        # Test if MPC exists
+                        if mpc_path.startswith('C:'):
+                            if not Path(mpc_path).exists():
+                                continue
+                        
+                        # Build command
+                        mpc_cmd = [mpc_path, stream_url]
+                        
+                        # Add start time if specified (MPC-HC uses /start with space, not =)
+                        if start_time > 0:
+                            mpc_cmd.extend(['/start', str(int(start_time * 1000))])  # Convert to milliseconds
+                        
+                        # Launch MPC
+                        subprocess.Popen(mpc_cmd, creationflags=subprocess.CREATE_NO_WINDOW)
+                        mpc_found = True
+                        st.success(f"✅ Opened in MPC-HC at {start_time:.1f}s")
+                        return True
+                        
+                    except Exception as e:
+                        continue
+                
+                if not mpc_found:
+                    st.error("❌ MPC-HC not found. Please install MPC-HC or K-Lite Codec Pack")
+                    st.info("💡 Download from: https://mpc-hc.org/ or https://codecguide.com/download_k-lite_codec_pack_standard.htm")
+                    return False
+                    
+            else:
+                st.error(f"❌ Failed to get stream URL: {result.stderr}")
+                return False
+                
+    except subprocess.TimeoutExpired:
+        st.error("❌ Timeout getting video stream URL")
+        return False
+    except Exception as e:
+        st.error(f"❌ Error opening in MPC: {e}")
+        return False
+
+
+@st.dialog("MPC-HC Video Player", width="large")
+def show_mpc_video(pts_time, result_data, result_index):
+    """Display MPC-HC video controls with start time and frame export"""
+    try:
+        # Initialize session state for frame navigation
+        if f'current_frame_{result_index}' not in st.session_state:
+            # Get initial frame index from result data
+            video_id, frame_idx = get_frame_info_from_keyframe_path(result_data.get('path', ''))
+            st.session_state[f'current_frame_{result_index}'] = frame_idx if frame_idx else 1
+        
+        # Get video_id from path parsing (e.g., L21_V001 from "L21/L21_V001/001.jpg")
+        parsed_video_id, parsed_frame_idx = get_frame_info_from_keyframe_path(result_data.get('path', ''))
+        video_id = parsed_video_id if parsed_video_id else result_data.get('video_id', 'Unknown')
+        
+        current_frame = st.session_state[f'current_frame_{result_index}']
         watch_url = result_data.get('watch_url', 'Not available')
         
-        st.markdown(f"### ▶️ Video Player - Result #{result_index + 1}")
-        st.markdown(f"**Start Time:** {pts_time:.1f} seconds")
-        st.markdown(f"**Video ID:** {video_id}")
+        # Header with video info
+        st.markdown(f"### 🎥 MPC-HC Player - Result #{result_index + 1}")
+        
+        # Video info columns
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.markdown(f"**Video ID:** {video_id}")
+        with col_info2:
+            st.markdown(f"**Start Time:** {pts_time:.1f}s")
+        with col_info3:
+            st.markdown(f"**Current File:** {current_frame}")
+        
         if watch_url != 'Not available':
             st.markdown(f"**Original URL:** {watch_url}")
         
-        # Embed YouTube iframe
-        st.markdown(f'''
-        <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000;">
-            <iframe 
-                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
-                src="{youtube_url}" 
-                title="YouTube video player" 
-                frameborder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                allowfullscreen>
-            </iframe>
-        </div>
-        ''', unsafe_allow_html=True)
+        # Calculate current time based on frame
+        current_pts_time = get_pts_time_from_n(video_id, current_frame)
+        if current_pts_time is None:
+            current_pts_time = pts_time  # Fallback to original time
         
-        st.info("🎬 Video will start automatically at the specified time.")
+        # CSV Export section
+        st.markdown("---")
+        st.markdown("### 💾 Export Current Frame")
+        
+        col_csv1, col_csv2 = st.columns([2, 1])
+        with col_csv1:
+            csv_filename_frame = st.text_input(
+                "CSV filename for frame export:",
+                value=f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                key=f"csv_frame_{result_index}",
+                help="File to append current frame data"
+            )
+        
+        with col_csv2:
+            # Frame input for export
+            export_frame = st.number_input(
+                "Frame to export:",
+                min_value=1,
+                value=current_frame,
+                step=1,
+                key=f"export_frame_input_{result_index}",
+                help="Enter frame number to export (default: current frame)"
+            )
+        
+        # VQA Answer input
+        vqa_answer = st.text_input(
+            "VQA Answer (optional):",
+            value="",
+            key=f"vqa_answer_{result_index}",
+            help="Enter VQA answer if available, will be added as 3rd column in CSV"
+        )
+        
+        # Export button
+        if st.button("📤 Add Frame to CSV", help=f"Add frame {export_frame} to CSV file", key=f"export_frame_{result_index}"):
+            # Get real frame_idx from CSV mapping (n -> frame_idx)
+            real_frame_idx = get_real_frame_idx_from_n(video_id, export_frame)
+            if real_frame_idx is None:
+                real_frame_idx = export_frame  # Fallback to input value
+            
+            # Prepare frame data for CSV: video_id, real_frame_idx, vqa_answer (if provided)
+            frame_data = {
+                'video_id': video_id,  # L21_V001 from path parsing
+                'frame_idx': real_frame_idx,  # Real frame_idx from CSV mapping
+            }
+            
+            # Add VQA answer if provided
+            if vqa_answer and vqa_answer.strip():
+                frame_data['vqa_answer'] = vqa_answer.strip()
+            
+            success = append_to_csv(csv_filename_frame, frame_data)
+            if success:
+                if vqa_answer and vqa_answer.strip():
+                    st.success(f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}, {vqa_answer.strip()}")
+                else:
+                    st.success(f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}")
+            else:
+                st.error("❌ Failed to export frame data")
+        
+        # MPC-HC Quick Launch
+        st.markdown("---")
+        st.markdown("### 🎥 MPC-HC Player")
+        
+        # Large MPC-HC button
+        col_mpc1, col_mpc2, col_mpc3 = st.columns([1, 2, 1])
+        with col_mpc2:
+            if st.button("🎬 Open Video in MPC-HC", 
+                        help=f"Open video in MPC-HC at frame {current_frame} ({current_pts_time:.1f}s)", 
+                        key=f"mpc_large_{result_index}",
+                        use_container_width=True):
+                video_url = result_data.get('watch_url', '')
+                if video_url:
+                    open_in_mpc(video_url, current_pts_time)
+                else:
+                    st.error("❌ No video URL available")
+        
+        # Quick info about current position
+        st.info(f"Will open at **Frame {current_frame}** (Time: **{current_pts_time:.1f}s**)")
+        
+        # Setup instructions (expandable)
+        with st.expander("🔧 Setup MPC-HC", expanded=False):
+            st.markdown("""
+            **Required:**
+            1. **Install yt-dlp:** `pip install yt-dlp`
+            2. **Install MPC-HC:** Download from [mpc-hc.org](https://mpc-hc.org/) or install K-Lite Codec Pack
+            
+            **Benefits of MPC-HC:**
+            - ✅ Better video quality and performance
+            - ✅ Frame-perfect seeking and navigation
+            - ✅ Full keyboard shortcuts support (J/K/L, comma/dot for frame stepping)
+            - ✅ No ads or restrictions
+            - ✅ Better playback controls and speed adjustment
+            """)
         
         # Show mapping info
         if 'watch_url' in result_data and result_data['watch_url']:
-            st.success(f"✅ Using actual YouTube URL from metadata")
+            st.success(f"✅ Using video URL from metadata")
         else:
-            st.warning("⚠️ No YouTube URL found in metadata. Using fallback video.")
+            st.warning("⚠️ No video URL found in metadata.")
         
     except Exception as e:
         st.error(f"Could not load video: {str(e)}")
@@ -590,14 +764,14 @@ st.markdown("""
         background: linear-gradient(45deg, #6c757d, #495057);
         color: white;
     }
-    
-    /* Special styling for YouTube buttons */
-    div[data-testid="column"] .stButton > button[title*="YouTube"] {
+
+    /* Special styling for Video buttons */
+    div[data-testid="column"] .stButton > button[title*="Video"] {
         background: linear-gradient(45deg, #ff0000, #cc0000) !important;
         color: white !important;
     }
     
-    div[data-testid="column"] .stButton > button[title*="YouTube"]:hover {
+    div[data-testid="column"] .stButton > button[title*="Video"]:hover {
         background: linear-gradient(45deg, #cc0000, #990000) !important;
     }
     
@@ -726,7 +900,7 @@ if 'search_results' not in st.session_state:
 if 'api_base_url' not in st.session_state:
     st.session_state.api_base_url = "http://localhost:8000"
 if 'csv_filename' not in st.session_state:
-    st.session_state.csv_filename = f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    st.session_state.csv_filename = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
 # Header
 st.markdown("""
@@ -1687,30 +1861,6 @@ if st.session_state.search_results:
             st.markdown("• Bulk: Use 'Export All to CSV' button")
             st.markdown("• Includes: Frame index, PTS time, metadata")
 
-    # YouTube Configuration
-    with st.expander("▶️ YouTube Video Configuration", expanded=False):
-        st.markdown("**📹 Test YouTube Player**")
-        st.markdown("Test the YouTube player with actual metadata URLs from search results.")
-        
-        col_yt1, col_yt2 = st.columns([2, 1])
-        
-        with col_yt1:
-            st.markdown("**Note:** YouTube URLs are automatically extracted from search result metadata.")
-            st.markdown("Each search result contains `watch_url` field with the actual YouTube URL.")
-            
-        with col_yt2:
-            test_pts = st.number_input("Test PTS Time", value=10.0, step=1.0, help="Time in seconds to test")
-            
-        # Show example of how it works
-        if st.button("🧪 Test with Sample Data", help="Test the YouTube player with sample metadata"):
-            sample_result = {
-                'video_id': 'L21_V001',
-                'watch_url': 'https://youtube.com/watch?v=Rzpw5WR7nAY',
-                'title': '60 Giây Sáng - Ngày 01082024 - HTV Tin Tức Mới Nhất 2024',
-                'author': '60 Giây Official'
-            }
-            show_youtube_video(test_pts, sample_result, 0)
-
     # Results summary
     col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
 
@@ -1756,11 +1906,18 @@ if st.session_state.search_results:
         video_id, frame_idx = get_frame_info_from_keyframe_path(result.get('path', ''))
         pts_time = None
         if video_id and frame_idx is not None:
-            pts_time = get_pts_time_from_frame_idx(video_id, frame_idx)
+            pts_time = get_pts_time_from_n(video_id, frame_idx)
         
         # Add extracted info to result for display and CSV export
-        result['frame_idx'] = frame_idx
+        result['frame_idx'] = frame_idx  # n (filename number like 1, 2, 3...)
         result['pts_time'] = pts_time
+        
+        # Get real frame_idx for CSV export
+        if video_id and frame_idx is not None:
+            real_frame_idx = get_real_frame_idx_from_n(video_id, frame_idx)
+            result['real_frame_idx'] = real_frame_idx
+        else:
+            result['real_frame_idx'] = None
         
         with st.container():
             col_img, col_info = st.columns([1, 3])
@@ -1781,16 +1938,16 @@ if st.session_state.search_results:
                         if st.button(f"📋 Detail", key=f"detail_{i}", help="View detailed metadata", type="secondary", use_container_width=True):
                             show_metadata_only(result, i)
 
-                    # New buttons row for YouTube and CSV export
+                    # New buttons row for Video and CSV export
                     col_btn3, col_btn4 = st.columns(2)
                     
                     with col_btn3:
-                        # YouTube button (only show if we have pts_time)
+                        # MPC-HC button (only show if we have pts_time)
                         if pts_time is not None:
-                            if st.button(f"▶️ YouTube", key=f"youtube_{i}", help=f"Open YouTube at {pts_time:.1f}s", use_container_width=True):
-                                show_youtube_video(pts_time, result, i)
+                            if st.button(f"🎥 MPC-HC", key=f"mpc_{i}", help=f"Open Video in MPC-HC at {pts_time:.1f}s", use_container_width=True):
+                                show_mpc_video(pts_time, result, i)
                         else:
-                            st.button(f"▶️ YouTube", key=f"youtube_{i}", help="pts_time not available", disabled=True, use_container_width=True)
+                            st.button(f"🎥 MPC-HC", key=f"mpc_{i}", help="pts_time not available", disabled=True, use_container_width=True)
                     
                     with col_btn4:
                         # Append to CSV button
@@ -1841,13 +1998,18 @@ if st.session_state.search_results:
                     metadata_parts.append(
                         f"<strong>📁 Group ID:</strong> {result['group_id']}")
 
-                # NEW: Show frame_idx information
+                # NEW: Show frame information (both filename number and real frame_idx)
                 if frame_idx is not None:
-                    metadata_parts.append(
-                        f"<strong>🎬 Frame Index:</strong> {frame_idx}")
+                    real_frame_idx = result.get('real_frame_idx')
+                    if real_frame_idx is not None:
+                        metadata_parts.append(
+                            f"<strong>🎬 Frame:</strong> File #{frame_idx} (Video Frame #{real_frame_idx})")
+                    else:
+                        metadata_parts.append(
+                            f"<strong>🎬 Frame:</strong> File #{frame_idx} (Video Frame: Unknown)")
                 else:
                     metadata_parts.append(
-                        f"<strong>🎬 Frame Index:</strong> <em>Unable to parse</em>")
+                        f"<strong>🎬 Frame:</strong> <em>Unable to parse</em>")
 
                 # NEW: Show pts_time information
                 if pts_time is not None:
@@ -1889,7 +2051,7 @@ if st.session_state.search_results:
                     metadata_parts.append(
                         f"<strong>📅 Published:</strong> {result['publish_date']}")
 
-                # Show YouTube URL if available
+                # Show Video URL if available
                 if 'watch_url' in result and result['watch_url']:
                     watch_url = result['watch_url']
                     # Shorten URL for display
@@ -1898,7 +2060,7 @@ if st.session_state.search_results:
                     else:
                         display_url = watch_url
                     metadata_parts.append(
-                        f"<strong>🔗 YouTube:</strong> <a href='{watch_url}' target='_blank'>{display_url}</a>")
+                        f"<strong>🔗 Video:</strong> <a href='{watch_url}' target='_blank'>{display_url}</a>")
 
                 # Show detected objects if available
                 if 'objects' in result and result['objects']:

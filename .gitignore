@@ -210,3 +210,4 @@ data/
 *.jpg
 *.json
 /tests
+*.csv
