@@ -198,6 +198,9 @@ def append_to_csv(filename, result_data):
 def export_all_results_to_csv(filename, results_list):
     """Export all search results to CSV file in simple format: video_id, frame_idx"""
     try:
+        output_dir = Path("../output")
+        output_dir.mkdir(exist_ok=True)
+        filename = str(output_dir / filename)
         if not filename.endswith('.csv'):
             filename += '.csv'
         
