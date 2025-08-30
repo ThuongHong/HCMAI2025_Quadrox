@@ -99,18 +99,40 @@ async def generate_caption(
 
             processing_time = (time.time() - start_time) * 1000
 
+            # Defensive schema handling - safely get fields with defaults
+            caption_text = result.get("caption", "")
+            source = result.get("source", "unknown")
+            result_style = result.get("style", style)
+            success = result.get("success", True)
+            error = result.get("error")
+
             logger.info(
-                f"Caption generated: {result['source']} model, "
-                f"style={style}, time={processing_time:.0f}ms"
+                f"Caption generated: {source} model, "
+                f"style={result_style}, time={processing_time:.0f}ms"
             )
 
-            return {
-                "caption": result["caption"],
-                "style": result["style"],
-                "source": result["source"],
-                "processing_time_ms": processing_time,
-                "success": True
-            }
+            # Handle result based on success flag
+            if success and caption_text:
+                return {
+                    "caption": caption_text,
+                    "style": result_style,
+                    "source": source,
+                    "processing_time_ms": processing_time,
+                    "success": True
+                }
+            else:
+                # If captioner indicated failure or no caption
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "caption": caption_text or "Caption generation failed",
+                        "style": result_style,
+                        "source": source,
+                        "processing_time_ms": processing_time,
+                        "success": False,
+                        "error": error or "Unknown error"
+                    }
+                )
 
         finally:
             # Clean up temporary file
