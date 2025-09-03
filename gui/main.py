@@ -668,7 +668,8 @@ def show_metadata_only(metadata, keyframe_index):
 
         if caption_rerank_was_enabled:
             # Try to get caption from the search result data (from rerank pipeline)
-            result_caption = metadata.get('caption', None)
+            result_caption = metadata.get('caption') or (metadata.get(
+                'caption') if isinstance(metadata, dict) else None)
 
             if result_caption and result_caption.strip():
                 # Display caption from rerank pipeline
@@ -684,15 +685,71 @@ def show_metadata_only(metadata, keyframe_index):
                 # Show source information
                 st.caption("✅ Generated during search rerank process")
             else:
-                # Caption rerank was enabled but no caption in result
+                # Caption rerank was enabled but no caption in result - try on-demand generation
                 st.markdown(f"""
                 <div class="info-card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
                     <div class="info-label">🤖 AI Caption</div>
                     <div class="info-value" style="color: #856404; font-style: italic;">
-                        Caption rerank was enabled but no caption available in results
+                        Generating caption on-demand...
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # Try to generate caption on-demand
+                image_path = metadata.get('path')
+                image_id = metadata.get('id') or (
+                    image_path and os.path.basename(image_path))
+
+                if image_path and os.path.exists(image_path):
+                    # Check if we already have cached caption for this item
+                    if 'captions_by_id' not in st.session_state:
+                        st.session_state['captions_by_id'] = {}
+
+                    if image_id and image_id in st.session_state['captions_by_id']:
+                        # Use cached caption
+                        cached_caption = st.session_state['captions_by_id'][image_id]
+                        if cached_caption and cached_caption.get('caption'):
+                            st.markdown(f"""
+                            <div class="info-card" style="background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); border-left: 4px solid #4caf50;">
+                                <div class="info-label">🤖 AI Caption (On-Demand)</div>
+                                <div class="info-value" style="font-size: 1.1rem; line-height: 1.5; font-style: italic;">
+                                    "{cached_caption['caption']}"
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.caption(
+                                f"✅ Generated on-demand via {cached_caption.get('source', 'unknown')} model")
+                        else:
+                            st.warning("Caption generation failed")
+                    else:
+                        # Generate new caption
+                        with st.spinner('Generating caption on-demand...'):
+                            api_base_url = "http://localhost:8000"  # TODO: get from config
+                            new_caption = get_image_caption(
+                                image_path, api_base_url)
+
+                            if new_caption and new_caption.get('caption'):
+                                # Cache the result
+                                if image_id:
+                                    st.session_state['captions_by_id'][image_id] = new_caption
+
+                                # Display the new caption
+                                st.markdown(f"""
+                                <div class="info-card" style="background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); border-left: 4px solid #4caf50;">
+                                    <div class="info-label">🤖 AI Caption (On-Demand)</div>
+                                    <div class="info-value" style="font-size: 1.1rem; line-height: 1.5; font-style: italic;">
+                                        "{new_caption['caption']}"
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                st.caption(
+                                    f"✅ Generated on-demand via {new_caption.get('source', 'unknown')} model")
+                            else:
+                                st.warning(
+                                    "Caption rerank was enabled but caption generation failed")
+                else:
+                    st.warning(
+                        "Caption rerank was enabled but image file not found for on-demand generation")
         else:
             # Caption rerank was not enabled
             st.markdown(f"""
@@ -2389,8 +2446,11 @@ if st.session_state.search_results:
 
                 # NEW: Show pts_time information
                 if pts_time is not None:
+                    # Format PTS time as minutes:seconds (total seconds)
+                    minutes = int(pts_time) // 60
+                    seconds = int(pts_time) % 60
                     metadata_parts.append(
-                        f"<strong>⏱️ PTS Time:</strong> {pts_time:.1f}s")
+                        f"<strong>⏱️ PTS Time:</strong> {minutes}:{seconds:02d} ({pts_time:.1f}s)")
                 else:
                     metadata_parts.append(
                         f"<strong>⏱️ PTS Time:</strong> <em>Not available</em>")
@@ -2453,11 +2513,7 @@ if st.session_state.search_results:
                     metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
 
                 # Format path for display - show only relative part from keyframes/
-                display_path = result['path']
-                if 'keyframes\\' in display_path:
-                    display_path = display_path.split('keyframes\\')[-1]
-                elif 'keyframes/' in display_path:
-                    display_path = display_path.split('keyframes/')[-1]
+                display_path = result['path'].replace('\\', '/')
 
                 # Create the result card HTML
                 result_html = f"""

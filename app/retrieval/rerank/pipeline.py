@@ -175,6 +175,20 @@ class RerankPipeline:
                     logger.error(f"Caption stage failed: {e}")
                     options.w_cap = 0.0  # Disable weight
 
+                    # Ensure all candidates still have empty caption metadata for consistency
+                    for cand in base_candidates:
+                        # Use ensure_metadata if available, otherwise initialize manually
+                        if hasattr(cand, 'ensure_metadata'):
+                            metadata = cand.ensure_metadata()
+                        else:
+                            # Fallback for non-Keyframe objects
+                            if not hasattr(cand, 'metadata') or cand.metadata is None:
+                                cand.metadata = {}
+                            metadata = cand.metadata
+
+                        if 'caption' not in metadata:
+                            metadata['caption'] = ''
+
             # Stage 3: LLM reranking (if enabled)
             if options.use_llm:
                 stage_start = time.time()
@@ -224,6 +238,22 @@ class RerankPipeline:
                     final_candidates = base_candidates
                 else:
                     final_candidates = base_candidates[:options.final_top_k]
+
+            # Ensure all final candidates have caption metadata for consistency
+            if not options.use_caption:
+                # Caption rerank was not enabled, set empty captions for all candidates
+                for cand in final_candidates:
+                    # Use ensure_metadata if available, otherwise initialize manually
+                    if hasattr(cand, 'ensure_metadata'):
+                        metadata = cand.ensure_metadata()
+                    else:
+                        # Fallback for non-Keyframe objects
+                        if not hasattr(cand, 'metadata') or cand.metadata is None:
+                            cand.metadata = {}
+                        metadata = cand.metadata
+
+                    if 'caption' not in metadata:
+                        metadata['caption'] = ''
 
             total_time = time.time() - start_time
 
@@ -277,13 +307,72 @@ class RerankPipeline:
         options: RerankOptions
     ) -> List[Tuple[Any, float]]:
         """Run Caption reranking stage."""
+        candidates_for_caption = candidates[:options.cap_top_t]
+
         results = await self.caption_ranker.rerank_with_captions(
             query=query,
-            candidates=candidates[:options.cap_top_t],
+            candidates=candidates_for_caption,
             top_t=options.cap_top_t,
             cache_enabled=options.cache_enabled,
             fallback_enabled=options.fallback_enabled
         )
+
+        # After getting results, ensure captions are attached to candidate metadata
+        try:
+            # Get captions from the ranker for these specific candidates
+            captions_batch = await self.caption_ranker._generate_captions_batch(
+                candidates_for_caption,
+                cache_enabled=options.cache_enabled,
+                fallback_enabled=options.fallback_enabled
+            )
+
+            # Attach captions to candidate metadata for candidates that were processed
+            for cand, caption_text in zip(candidates_for_caption, captions_batch):
+                # Use ensure_metadata if available, otherwise initialize manually
+                if hasattr(cand, 'ensure_metadata'):
+                    metadata = cand.ensure_metadata()
+                else:
+                    # Fallback for non-Keyframe objects
+                    if not hasattr(cand, 'metadata') or cand.metadata is None:
+                        cand.metadata = {}
+                    metadata = cand.metadata
+
+                # Store the caption in metadata for later retrieval by controller
+                metadata['caption'] = caption_text or ''
+
+                # Log caption attachment
+                image_id = self._get_candidate_id(cand)
+                logger.debug(
+                    f"Attached caption to candidate {image_id}: {caption_text[:50] if caption_text else 'None'}...")
+
+            # Ensure all other candidates (outside top_t) have empty caption metadata for consistency
+            for cand in candidates[options.cap_top_t:]:
+                # Use ensure_metadata if available, otherwise initialize manually
+                if hasattr(cand, 'ensure_metadata'):
+                    metadata = cand.ensure_metadata()
+                else:
+                    # Fallback for non-Keyframe objects
+                    if not hasattr(cand, 'metadata') or cand.metadata is None:
+                        cand.metadata = {}
+                    metadata = cand.metadata
+
+                if 'caption' not in metadata:
+                    cand.metadata['caption'] = ''
+
+        except Exception as e:
+            logger.error(f"Failed to attach captions to candidates: {e}")
+            # Ensure all candidates have empty caption if attachment fails
+            for cand in candidates:
+                # Use ensure_metadata if available, otherwise initialize manually
+                if hasattr(cand, 'ensure_metadata'):
+                    metadata = cand.ensure_metadata()
+                else:
+                    # Fallback for non-Keyframe objects
+                    if not hasattr(cand, 'metadata') or cand.metadata is None:
+                        cand.metadata = {}
+                    metadata = cand.metadata
+
+                metadata['caption'] = ''
 
         return results
 
@@ -342,6 +431,20 @@ class RerankPipeline:
             f"Auto mode adjusted: sg={options.use_sg}, cap={options.use_caption}, llm={options.use_llm}")
 
         return options
+
+    def _get_candidate_id(self, candidate: Any) -> str:
+        """Get unique identifier for a candidate."""
+        try:
+            if hasattr(candidate, 'keyframe_num') and hasattr(candidate, 'group_num') and hasattr(candidate, 'video_num'):
+                return f"L{candidate.group_num:02d}_V{candidate.video_num:03d}_{candidate.keyframe_num:03d}"
+            elif hasattr(candidate, 'id'):
+                return str(candidate.id)
+            elif hasattr(candidate, 'path'):
+                return str(candidate.path)
+            else:
+                return str(id(candidate))[-8:]  # Last 8 chars of object id
+        except Exception:
+            return str(id(candidate))[-8:]
 
     def _log_pipeline_summary(
         self,

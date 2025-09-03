@@ -8,7 +8,6 @@ class KeyframeServiceReponse(BaseModel):
     group_num: int = Field(..., description="Group ID")
     keyframe_num: int = Field(..., description="Keyframe number")
     confidence_score: float = Field(..., description="Keyframe number")
-    
 
 
 class SingleKeyframeDisplay(BaseModel):
@@ -28,6 +27,9 @@ class SingleKeyframeDisplay(BaseModel):
     watch_url: Optional[str] = None
     # Object detection fields
     objects: Optional[List[str]] = None
+    # AI-generated caption field
+    caption: Optional[str] = None
+
 
 class KeyframeDisplay(BaseModel):
     results: list[SingleKeyframeDisplay]

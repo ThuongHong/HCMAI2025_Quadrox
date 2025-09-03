@@ -70,9 +70,71 @@ class EnsembleScorer:
                 logger.debug(f"Method '{method_name}': {len(method_results)} scores, "
                              f"range [{normalized_scores.min():.3f}, {normalized_scores.max():.3f}]")
 
-            # Apply weights
+            # Apply weights with caption quality guard
             weight_vector = np.array([weights.get(name, 0.0)
                                      for name in method_names])
+
+            # Apply caption quality guard if caption method is present
+            if 'caption' in method_names:
+                caption_idx = method_names.index('caption')
+                original_caption_weight = weight_vector[caption_idx]
+
+                # Check caption quality for all candidates
+                reliable_caption_count = 0
+                total_caption_count = 0
+
+                for candidate, score in score_dict.get('caption', []):
+                    total_caption_count += 1
+
+                    # Check if candidate has reliable caption
+                    if hasattr(candidate, 'metadata') and candidate.metadata:
+                        caption = candidate.metadata.get('caption', '')
+                        caption_source = candidate.metadata.get(
+                            'caption_source', 'unknown')
+                        caption_model = candidate.metadata.get(
+                            'caption_model', 'unknown')
+
+                        # Caption is reliable if:
+                        # 1. It's from cache or generated (not fallback synthetic)
+                        # 2. It has reasonable length (at least 10 chars)
+                        # 3. It's not from synthetic model with very short length
+                        is_reliable = (
+                            caption_source in {'cache', 'generated'} and
+                            len(caption) >= 10 and
+                            not (caption_model ==
+                                 'synthetic' and len(caption) < 20)
+                        )
+
+                        if is_reliable:
+                            reliable_caption_count += 1
+
+                # Adjust caption weight based on reliability
+                if total_caption_count > 0:
+                    reliability_ratio = reliable_caption_count / total_caption_count
+
+                    # Reduce weight if reliability is low
+                    if reliability_ratio < 0.5:  # Less than 50% reliable captions
+                        adjusted_weight = original_caption_weight * 0.3  # Reduce to 30%
+                        logger.info(
+                            f"Caption quality guard: {reliable_caption_count}/{total_caption_count} "
+                            f"reliable captions ({reliability_ratio:.1%}), reducing weight "
+                            f"{original_caption_weight:.2f} → {adjusted_weight:.2f}"
+                        )
+                        weight_vector[caption_idx] = adjusted_weight
+                    elif reliability_ratio < 0.8:  # Less than 80% reliable captions
+                        adjusted_weight = original_caption_weight * 0.7  # Reduce to 70%
+                        logger.info(
+                            f"Caption quality guard: {reliable_caption_count}/{total_caption_count} "
+                            f"reliable captions ({reliability_ratio:.1%}), reducing weight "
+                            f"{original_caption_weight:.2f} → {adjusted_weight:.2f}"
+                        )
+                        weight_vector[caption_idx] = adjusted_weight
+                    else:
+                        logger.debug(
+                            f"Caption quality good: {reliable_caption_count}/{total_caption_count} "
+                            f"reliable captions ({reliability_ratio:.1%}), keeping weight {original_caption_weight:.2f}"
+                        )
+
             weighted_scores = score_matrix @ weight_vector
 
             # Handle case where all weights are zero
