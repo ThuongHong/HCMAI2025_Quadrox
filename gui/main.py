@@ -662,54 +662,44 @@ def show_metadata_only(metadata, keyframe_index):
         # AI Generated Caption Section
         st.markdown("### 🤖 AI Generated Caption")
 
-        # Try to get caption from API
-        image_path = metadata.get('path', '')
-        if image_path and os.path.exists(image_path):
-            with st.spinner("🔄 Generating caption..."):
-                caption_data = get_cached_caption(
-                    image_path, st.session_state.api_base_url)
+        # Check if caption rerank was enabled and if caption is available in result
+        caption_rerank_was_enabled = st.session_state.get(
+            'last_search_caption_rerank_enabled', False)
 
-            if caption_data:
-                # Display caption with metadata
-                caption_text = caption_data['caption']
-                source_info = caption_data.get('source', 'unknown')
-                style_info = caption_data.get('style', 'dense')
-                processing_time = caption_data.get('processing_time', 0)
+        if caption_rerank_was_enabled:
+            # Try to get caption from the search result data (from rerank pipeline)
+            result_caption = metadata.get('caption', None)
 
-                # Caption display with source info
+            if result_caption and result_caption.strip():
+                # Display caption from rerank pipeline
                 st.markdown(f"""
                 <div class="info-card" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 4px solid #2196f3;">
-                    <div class="info-label">🤖 AI Caption ({source_info.upper()} - {style_info})</div>
+                    <div class="info-label">🤖 AI Caption (From Rerank Pipeline)</div>
                     <div class="info-value" style="font-size: 1.1rem; line-height: 1.5; font-style: italic;">
-                        "{caption_text}"
+                        "{result_caption}"
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Caption metadata in smaller text
-                col_cap1, col_cap2 = st.columns(2)
-                with col_cap1:
-                    st.caption(f"🔧 Model: {source_info}")
-                with col_cap2:
-                    if processing_time > 0:
-                        st.caption(f"⏱️ Generated in: {processing_time:.0f}ms")
-
+                # Show source information
+                st.caption("✅ Generated during search rerank process")
             else:
-                # Show fallback message
+                # Caption rerank was enabled but no caption in result
                 st.markdown(f"""
-                <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
+                <div class="info-card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
                     <div class="info-label">🤖 AI Caption</div>
-                    <div class="info-value" style="color: #666; font-style: italic;">
-                        Caption not available - Vietnamese captioning service may be offline
+                    <div class="info-value" style="color: #856404; font-style: italic;">
+                        Caption rerank was enabled but no caption available in results
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
+            # Caption rerank was not enabled
             st.markdown(f"""
-            <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
+            <div class="info-card" style="background: #f8f9fa; border-left: 4px solid #6c757d;">
                 <div class="info-label">🤖 AI Caption</div>
-                <div class="info-value" style="color: #666; font-style: italic;">
-                    Image file not found
+                <div class="info-value" style="color: #6c757d; font-style: italic;">
+                    Not enabled - Caption rerank was not activated for this search
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -2151,6 +2141,9 @@ with col_search1:
                         results = response.json()
                         st.session_state.search_results = results
                         st.session_state.search_query = query
+                        # Store rerank settings for later use in metadata display
+                        st.session_state.last_search_rerank_enabled = enable_rerank
+                        st.session_state.last_search_caption_rerank_enabled = rerank_caption_enabled if enable_rerank else False
                         st.rerun()
                     else:
                         st.error(
@@ -2191,6 +2184,9 @@ with col_search2:
                         results = response.json()
                         st.session_state.search_results = results
                         st.session_state.search_query = f"Image: {uploaded_file.name}"
+                        # Store rerank settings for image search (no rerank for image search)
+                        st.session_state.last_search_rerank_enabled = False
+                        st.session_state.last_search_caption_rerank_enabled = False
                         st.rerun()
                     else:
                         st.error(

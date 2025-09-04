@@ -76,10 +76,11 @@ class CaptionRanker:
                 self.vintern_captioner = VinternCaptionerCPU(
                     model_path=vintern_model_path,
                     cache_dir=str(self.cache_dir.parent / "vintern_captions"),
-                    max_workers=max_workers
+                    max_workers=max_workers,
+                    fallback_to_public=True  # Ensure fallback is available
                 )
                 logger.info(
-                    f"VinternCaptionerCPU initialized: {vintern_model_path}")
+                    f"VinternCaptionerCPU initialized: {vintern_model_path}, allow_on_demand={allow_on_demand}")
             except Exception as e:
                 logger.warning(
                     f"Failed to initialize VinternCaptionerCPU: {e}, falling back to synthetic")
@@ -152,8 +153,9 @@ class CaptionRanker:
             n_candidates = min(len(candidates), top_t)
             selected_candidates = candidates[:n_candidates]
 
-            logger.debug(
-                f"Generating synthetic captions for top {n_candidates} candidates")
+            logger.info(
+                f"Caption reranking: {n_candidates} candidates, model={self.model_name}, "
+                f"on_demand={self.allow_on_demand}, cache={cache_enabled}")
 
             # Generate captions for selected candidates
             start_time = time.time()
@@ -162,7 +164,9 @@ class CaptionRanker:
             )
 
             elapsed = time.time() - start_time
-            logger.debug(f"Caption generation took {elapsed:.2f}s")
+            successful_captions = len([c for c in captions if c.strip()])
+            logger.info(
+                f"Caption generation completed: {successful_captions}/{len(captions)} successful in {elapsed:.2f}s")
 
             # Compute caption-query similarities
             scores = await self._compute_caption_similarities(
@@ -179,8 +183,8 @@ class CaptionRanker:
             results.sort(key=lambda x: x[1], reverse=True)
 
             if scores:
-                logger.debug(f"Caption reranking completed, "
-                             f"score range: [{min(scores):.3f}, {max(scores):.3f}]")
+                logger.info(f"Caption reranking completed, "
+                            f"score range: [{min(scores):.3f}, {max(scores):.3f}]")
 
             return results
 
@@ -338,17 +342,24 @@ class CaptionRanker:
 
             # Generate caption on-demand if allowed
             if self.allow_on_demand:
+                logger.info(
+                    f"Generating Vintern caption on-demand for {image_id} (style={self.caption_style})")
                 result = self.vintern_captioner.caption_image(
                     image_path=image_path,
                     style=self.caption_style,
                     max_new_tokens=self.max_new_tokens
                 )
 
-                if "caption" in result:
-                    caption = result["caption"]
+                # Use defensive access for result fields
+                caption = result.get("caption", "")
+                success = result.get("success", True)
+
+                if success and caption:
+                    logger.info(
+                        f"Vintern caption generated for {image_id}: '{caption[:50]}...'")
 
                     # Cache the result
-                    if cache_enabled and caption:
+                    if cache_enabled:
                         cache_key = f"{image_id}_{self.caption_style}_{self.max_new_tokens}"
                         self._cache[cache_key] = {
                             'caption': caption,
@@ -363,16 +374,21 @@ class CaptionRanker:
                     return caption
                 else:
                     # Error in caption generation
+                    error_msg = result.get("error", "Unknown error")
+                    logger.warning(
+                        f"Vintern caption failed for {image_id}: {error_msg}")
                     if fallback_enabled:
                         logger.debug(
-                            f"Vintern caption failed for {image_id}, using synthetic")
+                            f"Using synthetic caption fallback for {image_id}")
                         return await self._get_or_generate_synthetic_caption(
                             candidate, image_id, cache_enabled, fallback_enabled
                         )
                     else:
                         return ""
             else:
-                # On-demand disabled, fall back to synthetic
+                # On-demand disabled, log and fall back to synthetic
+                logger.debug(
+                    f"On-demand caption disabled, using synthetic for {image_id}")
                 if fallback_enabled:
                     return await self._get_or_generate_synthetic_caption(
                         candidate, image_id, cache_enabled, fallback_enabled
@@ -636,7 +652,7 @@ class CaptionRanker:
                 query_embedding = self.model_service.embedding(query)
                 if hasattr(query_embedding, 'tolist'):
                     query_embedding = query_embedding.tolist()
-                
+
                 # Ensure query embedding is properly shaped
                 query_emb = np.array(query_embedding)
                 if query_emb.ndim == 1:
@@ -644,7 +660,7 @@ class CaptionRanker:
                 elif query_emb.ndim > 2:
                     # Flatten any extra dimensions
                     query_emb = query_emb.reshape(1, -1)
-                
+
             except Exception as e:
                 if fallback_enabled:
                     logger.warning(f"Failed to compute query embedding: {e}")
@@ -683,7 +699,7 @@ class CaptionRanker:
                 return [0.0] * len(captions)
 
             cap_embs = np.array(caption_embeddings)
-            
+
             # Ensure caption embeddings are 2D
             if cap_embs.ndim == 1:
                 cap_embs = cap_embs.reshape(1, -1)

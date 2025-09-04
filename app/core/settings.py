@@ -43,7 +43,7 @@ class RerankSettings(BaseSettings):
     RERANK_ENABLE_SUPERGLOBAL: bool = Field(
         default=True, description="Enable SuperGlobal rerank")
     RERANK_ENABLE_CAPTION: bool = Field(
-        default=False, description="Enable Caption rerank")
+        default=True, description="Enable Caption rerank")
     RERANK_ENABLE_LLM: bool = Field(
         default=False, description="Enable LLM rerank")
 
@@ -78,7 +78,7 @@ class RerankSettings(BaseSettings):
     RERANK_CAPTION_STYLE: str = Field(
         default="dense", description="Caption style (dense, short, tags, ocr)")
     RERANK_CAPTION_ALLOW_ON_DEMAND: bool = Field(
-        default=False, description="Allow on-demand caption generation")
+        default=True, description="Allow on-demand caption generation")
     RERANK_CAPTION_ALPHA: float = Field(
         default=1.0, description="CLIP score weight")
     RERANK_CAPTION_BETA: float = Field(
