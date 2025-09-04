@@ -79,14 +79,14 @@ def main():
 
     args = parser.parse_args()
 
-    logger.info(f"🚀 Starting caption precomputation with:")
-    logger.info(f"  📁 Images glob: {args.images_glob}")
-    logger.info(f"  🎨 Style: {args.style}")
-    logger.info(f"  🤖 Model path: {args.model_path}")
-    logger.info(f"  🔢 Max new tokens: {args.max_new_tokens}")
-    logger.info(f"  💾 Cache dir: {args.cache_dir}")
-    logger.info(f"  👥 Max workers: {args.max_workers}")
-    logger.info(f"  📦 Batch size: {args.batch_size}")
+    logger.info(f"Starting caption precomputation with:")
+    logger.info(f"  Images glob: {args.images_glob}")
+    logger.info(f"  Style: {args.style}")
+    logger.info(f"  Model path: {args.model_path}")
+    logger.info(f"  Max new tokens: {args.max_new_tokens}")
+    logger.info(f"  Cache dir: {args.cache_dir}")
+    logger.info(f"  Max workers: {args.max_workers}")
+    logger.info(f"  Batch size: {args.batch_size}")
 
     # Check if model exists
     model_path = Path(args.model_path)
@@ -184,16 +184,16 @@ def main():
                     100) if total_processed > 0 else 0
 
     logger.info("=" * 60)
-    logger.info("🏆 CAPTION PRECOMPUTATION COMPLETED")
+    logger.info("CAPTION PRECOMPUTATION COMPLETED")
     logger.info("=" * 60)
-    logger.info(f"📊 Total images processed: {total_processed}")
-    logger.info(f"✅ Successful captions: {total_success}")
-    logger.info(f"❌ Errors: {total_errors}")
-    logger.info(f"📈 Success rate: {success_rate:.1f}%")
-    logger.info(f"⏱️  Total time: {total_elapsed:.2f}s")
+    logger.info(f"Total images processed: {total_processed}")
+    logger.info(f"Successful captions: {total_success}")
+    logger.info(f"Errors: {total_errors}")
+    logger.info(f"Success rate: {success_rate:.1f}%")
+    logger.info(f"Total time: {total_elapsed:.2f}s")
     logger.info(
-        f"⚡ Average time per image: {total_elapsed/total_processed:.2f}s" if total_processed > 0 else "N/A")
-    logger.info(f"💾 Cache directory: {args.cache_dir}")
+        f"Average time per image: {total_elapsed/total_processed:.2f}s" if total_processed > 0 else "N/A")
+    logger.info(f"Cache directory: {args.cache_dir}")
 
     return 0 if total_errors == 0 else 1
 

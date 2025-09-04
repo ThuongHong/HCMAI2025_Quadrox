@@ -55,11 +55,7 @@ class VinternCaptionerCPU:
             max_workers: Max workers for ThreadPoolExecutor
             fallback_to_public: Use public models if Vintern unavailable
         """
-        # Normalize path for cross-platform compatibility
-        from pathlib import Path
-        norm_path = str(model_path).replace("\\", "/")
-        self.model_path = Path(norm_path).expanduser().resolve()
-
+        self.model_path = Path(model_path)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.max_workers = max_workers
@@ -73,25 +69,14 @@ class VinternCaptionerCPU:
         self.model_type = "vintern"  # or "blip", "git", etc.
 
         # Determine optimal dtype for CPU
-        supports_bf16 = torch.cpu.is_bf16_supported() if hasattr(
-            torch.cpu, "is_bf16_supported") else False
-        self.dtype = torch.bfloat16 if supports_bf16 else torch.float32
+        self.dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float32
 
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
-        logger.info(f"VinternCaptionerCPU initialized: model_path={self.model_path}, "
-                    f"cache_dir={cache_dir}, max_workers={max_workers}, dtype={self.dtype}, "
-                    f"fallback_enabled={fallback_to_public}")
-
-        # Check model path existence early
-        if not self.model_path.exists():
-            msg = f"Vintern model not found at {self.model_path}"
-            if fallback_to_public:
-                logger.warning(f"{msg}, will use fallback models")
-                self.model_type = "fallback"
-            else:
-                raise FileNotFoundError(msg)
+        logger.info(f"VinternCaptionerCPU initialized: model_path={model_path}, "
+                   f"cache_dir={cache_dir}, max_workers={max_workers}, dtype={self.dtype}, "
+                   f"fallback_enabled={fallback_to_public}")
 
     def _load_model(self) -> None:
         """Load model components if not already loaded."""
@@ -99,16 +84,14 @@ class VinternCaptionerCPU:
             return
 
         try:
-            # Try to load Vintern first if path exists and not fallback type
-            if self.model_type != "fallback" and self.model_path.exists():
+            # Try to load Vintern first
+            if self.model_path.exists():
                 self._load_vintern_model()
             elif self.fallback_to_public:
-                logger.warning(
-                    f"Using fallback models (Vintern not available)")
+                logger.warning(f"Vintern model not found at {self.model_path}, trying fallback models")
                 self._load_fallback_model()
             else:
-                raise FileNotFoundError(
-                    f"Model not found at {self.model_path}")
+                raise FileNotFoundError(f"Model not found at {self.model_path}")
 
         except Exception as e:
             if self.fallback_to_public and self.model_type == "vintern":
@@ -119,30 +102,28 @@ class VinternCaptionerCPU:
                 raise
 
     def _load_vintern_model(self) -> None:
-        """Load Vintern model with CPU-only optimizations."""
+        """Load Vintern model."""
         logger.info(f"Loading Vintern model from {self.model_path}")
         start_time = time.time()
 
-        # Load tokenizer with optimizations
+        # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_path,
-            trust_remote_code=True,
-            use_fast=True
+            trust_remote_code=True
         )
 
-        # Load processor with optimizations
+        # Load processor
         self.processor = AutoProcessor.from_pretrained(
             self.model_path,
-            trust_remote_code=True,
-            use_fast=True
+            trust_remote_code=True
         )
 
-        # Load model with CPU-only settings and corrected parameter name
+        # Load model with CPU-only settings
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             trust_remote_code=True,
-            dtype=self.dtype,  # Changed from torch_dtype to dtype
-            device_map=None,   # Force CPU-only
+            torch_dtype=self.dtype,
+            device_map=None,  # Force CPU-only
             low_cpu_mem_usage=True
         )
 
@@ -157,25 +138,23 @@ class VinternCaptionerCPU:
     def _load_fallback_model(self) -> None:
         """Load fallback public model."""
         from transformers import BlipProcessor, BlipForConditionalGeneration
-
+        
         model_name = "Salesforce/blip-image-captioning-base"
         logger.info(f"Loading fallback model: {model_name}")
         start_time = time.time()
 
         try:
-            self.processor = BlipProcessor.from_pretrained(
-                model_name, use_fast=True)
+            self.processor = BlipProcessor.from_pretrained(model_name)
             self.model = BlipForConditionalGeneration.from_pretrained(
                 model_name,
-                dtype=self.dtype  # Changed from torch_dtype to dtype
+                torch_dtype=self.dtype
             )
             self.model = self.model.to(self.device)
             self.model.eval()
             self.model_type = "blip"
 
             elapsed = time.time() - start_time
-            logger.info(
-                f"Fallback BLIP model loaded successfully in {elapsed:.2f}s")
+            logger.info(f"Fallback BLIP model loaded successfully in {elapsed:.2f}s")
 
         except Exception as e:
             logger.error(f"Failed to load fallback model: {e}")
@@ -206,8 +185,7 @@ class VinternCaptionerCPU:
                 # Move to CPU and convert dtype
                 for key in inputs:
                     if torch.is_tensor(inputs[key]):
-                        inputs[key] = inputs[key].to(
-                            self.device, dtype=self.dtype)
+                        inputs[key] = inputs[key].to(self.device, dtype=self.dtype)
 
                 return inputs
             else:
@@ -306,10 +284,9 @@ class VinternCaptionerCPU:
         """Generate caption using BLIP model."""
         # Simple prompt adaptation for BLIP
         text_prompt = "a photo of" if "dense" in prompt else ""
-
-        inputs = self.processor(
-            image, text_prompt, return_tensors="pt").to(self.device)
-
+        
+        inputs = self.processor(image, text_prompt, return_tensors="pt").to(self.device)
+        
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
@@ -318,50 +295,9 @@ class VinternCaptionerCPU:
                 num_beams=3,
                 repetition_penalty=1.2
             )
-
+        
         caption = self.processor.decode(outputs[0], skip_special_tokens=True)
         return caption.strip()
-
-    def _wrap_result(
-        self,
-        caption: str,
-        style: str,
-        max_new_tokens: int,
-        image_path: str,
-        start_time: float,
-        success: bool = True,
-        error: Optional[Exception] = None
-    ) -> Dict[str, Any]:
-        """
-        Wrap result in standardized schema to fix KeyError 'source'.
-
-        Args:
-            caption: Generated caption text
-            style: Caption style used
-            max_new_tokens: Max tokens parameter 
-            image_path: Path to source image
-            start_time: Generation start time
-            success: Whether generation succeeded
-            error: Error if failed
-
-        Returns:
-            Standardized result dict with all required fields
-        """
-        processing_time = time.time() - start_time
-
-        return {
-            "caption": (caption or "").strip(),
-            "style": style,
-            "max_new_tokens": max_new_tokens,
-            "source": self.model_type or "unknown",  # Fix for KeyError 'source'
-            "model": f"{self.model_type or 'unknown'}_cpu",
-            "image_path": str(image_path),
-            "generation_time": processing_time,
-            "processing_time_ms": int(processing_time * 1000),
-            "success": bool(success),
-            "error": str(error) if error else None,
-            "timestamp": time.time()
-        }
 
     def _get_cache_key(self, image_path: str, style: str, max_new_tokens: int) -> str:
         """Generate cache key for image + generation params."""
@@ -414,12 +350,6 @@ class VinternCaptionerCPU:
 
             if cached_result:
                 logger.debug(f"Cache hit for {Path(image_path).name}")
-                # Ensure cached result has all required fields
-                if "source" not in cached_result:
-                    cached_result["source"] = cached_result.get(
-                        "model_type", "cached")
-                if "success" not in cached_result:
-                    cached_result["success"] = "error" not in cached_result
                 return cached_result
 
             # Load model if needed
@@ -435,15 +365,16 @@ class VinternCaptionerCPU:
             caption = self._generate_caption(
                 image_inputs, prompt, max_new_tokens)
 
-            # Use standardized wrapper for result
-            result = self._wrap_result(
-                caption=caption,
-                style=style,
-                max_new_tokens=max_new_tokens,
-                image_path=image_path,
-                start_time=start_time,
-                success=True
-            )
+            # Prepare result
+            result = {
+                "caption": caption,
+                "style": style,
+                "max_new_tokens": max_new_tokens,
+                "model": f"{self.model_type}_cpu",
+                "image_path": str(image_path),
+                "generation_time": time.time() - start_time,
+                "timestamp": time.time()
+            }
 
             # Cache result
             self._save_to_cache(cache_key, result)
@@ -454,15 +385,14 @@ class VinternCaptionerCPU:
 
         except Exception as e:
             logger.error(f"Caption generation failed for {image_path}: {e}")
-            return self._wrap_result(
-                caption="",
-                style=style,
-                max_new_tokens=max_new_tokens,
-                image_path=image_path,
-                start_time=start_time,
-                success=False,
-                error=e
-            )
+            return {
+                "error": str(e),
+                "image_path": str(image_path),
+                "style": style,
+                "max_new_tokens": max_new_tokens,
+                "model": f"{getattr(self, 'model_type', 'unknown')}_cpu",
+                "timestamp": time.time()
+            }
 
     def batch_caption(
         self,

@@ -46,17 +46,7 @@ class QueryController:
         self.rerank_config = rerank_config or RerankSettings()
         self.rerank_pipeline = RerankPipeline(
             model_service=model_service,
-            cache_base_dir="./cache",
-            # Use settings for caption configuration
-            caption_model_name=self.rerank_config.RERANK_CAPTION_MODEL_NAME,
-            caption_vintern_model_path=self.rerank_config.RERANK_CAPTION_VINTERN_MODEL_PATH,
-            caption_style=self.rerank_config.RERANK_CAPTION_STYLE,
-            caption_max_new_tokens=self.rerank_config.RERANK_CAPTION_MAX_NEW_TOKENS,
-            caption_allow_on_demand=self.rerank_config.RERANK_CAPTION_ALLOW_ON_DEMAND,
-            caption_alpha=self.rerank_config.RERANK_CAPTION_ALPHA,
-            caption_beta=self.rerank_config.RERANK_CAPTION_BETA,
-            caption_workers=self.rerank_config.RERANK_CAPTION_WORKERS,
-            multilingual_model_path=self.rerank_config.RERANK_MULTILINGUAL_MODEL_PATH
+            cache_base_dir="./cache"
         )
         self.data_folder = data_folder
         self.id2index = json.load(open(id2index_path, 'r'))
