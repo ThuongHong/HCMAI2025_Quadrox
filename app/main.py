@@ -134,18 +134,6 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    # Log startup information
-    logger.info(
-        "🚀 Starting Keyframe Search API with enhanced caption generation")
-    logger.info("📋 Caption logging features:")
-    logger.info("  - Individual image caption generation with detailed logs")
-    logger.info("  - Caption API requests and responses with defensive schema")
-    logger.info(
-        "  - Reranking pipeline caption generation with on-demand support")
-    logger.info("  - Cache hits/misses tracking")
-    logger.info("  - Processing times and error handling")
-    logger.info("  - Cross-platform path normalization")
-
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
