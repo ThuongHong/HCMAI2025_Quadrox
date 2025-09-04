@@ -87,7 +87,8 @@ class QueryController:
             'publish_date': keyframe.publish_date,
             'thumbnail_url': keyframe.thumbnail_url,
             'watch_url': keyframe.watch_url,
-            'objects': keyframe.objects  # Include detected objects
+            'objects': keyframe.objects,  # Include detected objects
+            'caption': getattr(getattr(keyframe, 'metadata', None) or {}, 'caption', None),
         }
 
     def _extract_rerank_params(self, request_params: Dict[str, Any]) -> Dict[str, Any]:
