@@ -39,13 +39,9 @@ class RerankSettings(BaseSettings):
     RERANK_MODE: str = Field(
         default="custom", description="Rerank mode: auto or custom")
 
-    # Sub-switches
+    # Sub-switches (SuperGlobal only)
     RERANK_ENABLE_SUPERGLOBAL: bool = Field(
         default=True, description="Enable SuperGlobal rerank")
-    RERANK_ENABLE_CAPTION: bool = Field(
-        default=False, description="Enable Caption rerank")
-    RERANK_ENABLE_LLM: bool = Field(
-        default=False, description="Enable LLM rerank")
 
     # SuperGlobal parameters
     RERANK_SG_TOP_M: int = Field(
@@ -57,50 +53,6 @@ class RerankSettings(BaseSettings):
         default=3.0, description="Generalized mean pooling parameter")
     RERANK_SG_SCORE_WEIGHT: float = Field(
         default=1.0, description="SuperGlobal score weight")
-
-    # Caption parameters
-    RERANK_CAPTION_TOP_T: int = Field(
-        default=20, description="Caption rerank top-T")
-    RERANK_CAPTION_MODEL_NAME: str = Field(
-        default="synthetic", description="Caption model name (synthetic, vintern_cpu)")
-    RERANK_CAPTION_MAX_NEW_TOKENS: int = Field(
-        default=64, description="Caption generation max tokens")
-    RERANK_CAPTION_TEMPERATURE: float = Field(
-        default=0.0, description="Caption generation temperature")
-    RERANK_CAPTION_SCORE_WEIGHT: float = Field(
-        default=0.8, description="Caption score weight")
-    RERANK_CAPTION_CACHE_DIR: str = Field(
-        default="./cache/captions", description="Caption cache directory")
-
-    # New Vintern captioner parameters
-    RERANK_CAPTION_VINTERN_MODEL_PATH: str = Field(
-        default="./models/Vintern-1B-v3_5", description="Vintern model path")
-    RERANK_CAPTION_STYLE: str = Field(
-        default="dense", description="Caption style (dense, short, tags, ocr)")
-    RERANK_CAPTION_ALLOW_ON_DEMAND: bool = Field(
-        default=False, description="Allow on-demand caption generation")
-    RERANK_CAPTION_ALPHA: float = Field(
-        default=1.0, description="CLIP score weight")
-    RERANK_CAPTION_BETA: float = Field(
-        default=0.25, description="Caption score weight")
-    RERANK_CAPTION_WORKERS: int = Field(
-        default=2, description="Max workers for caption generation")
-
-    # Multilingual text embedding
-    RERANK_MULTILINGUAL_MODEL_PATH: str = Field(
-        default="./models/clip-multilingual/clip-ViT-B-32-multilingual-v1",
-        description="Multilingual text embedding model path")
-
-    # LLM parameters
-    RERANK_LLM_TOP_T: int = Field(default=5, description="LLM rerank top-T")
-    RERANK_LLM_MODEL_NAME: str = Field(
-        default="5CD-AI/Vintern-1B-v2", description="LLM model name")
-    RERANK_LLM_TIMEOUT_S: int = Field(
-        default=15, description="LLM timeout in seconds")
-    RERANK_LLM_SCORE_WEIGHT: float = Field(
-        default=1.2, description="LLM score weight")
-    RERANK_LLM_CACHE_DIR: str = Field(
-        default="./cache/llm_scores", description="LLM cache directory")
 
     # Ensemble and output
     RERANK_FINAL_TOP_K: int = Field(

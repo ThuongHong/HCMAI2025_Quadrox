@@ -1,9 +1,9 @@
 from core.logger import SimpleLogger
 from core.lifespan import lifespan
-from router import keyframe_api, agent_api, caption_api
-from fastapi import FastAPI, HTTPException
+from router import keyframe_api, agent_api
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+# from fastapi.responses import JSONResponse
 import sys
 import os
 import logging
@@ -76,7 +76,6 @@ app.add_middleware(
 
 app.include_router(keyframe_api.router, prefix="/api/v1")
 app.include_router(agent_api.router, prefix='/api/v1')
-app.include_router(caption_api.router)
 
 
 @app.get("/", tags=["root"])
@@ -133,7 +132,7 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

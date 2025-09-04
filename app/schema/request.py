@@ -18,13 +18,9 @@ class BaseSearchRequest(BaseModel):
     rerank_mode: Optional[Literal["auto", "custom"]] = Field(
         default=None, description="Reranking mode")
 
-    # Rerank method switches
+    # Rerank method switches (SuperGlobal only)
     rr_superglobal: Optional[int] = Field(
         default=None, description="Enable SuperGlobal rerank (0=off, 1=on)")
-    rr_caption: Optional[int] = Field(
-        default=None, description="Enable Caption rerank (0=off, 1=on)")
-    rr_llm: Optional[int] = Field(
-        default=None, description="Enable LLM rerank (0=off, 1=on)")
 
     # SuperGlobal parameters
     sg_top_m: Optional[int] = Field(
@@ -37,28 +33,6 @@ class BaseSearchRequest(BaseModel):
         default=None, ge=0.1, le=10.0, description="GeM pooling parameter")
     w_sg: Optional[float] = Field(
         default=None, ge=0.0, le=5.0, description="SuperGlobal weight")
-
-    # Caption parameters
-    cap_top_t: Optional[int] = Field(
-        default=None, ge=1, le=100, description="Caption rerank top-T")
-    cap_model: Optional[str] = Field(
-        default=None, description="Caption model name")
-    cap_max_tokens: Optional[int] = Field(
-        default=None, ge=1, le=512, description="Caption max tokens")
-    cap_temp: Optional[float] = Field(
-        default=None, ge=0.0, le=2.0, description="Caption temperature")
-    w_cap: Optional[float] = Field(
-        default=None, ge=0.0, le=5.0, description="Caption weight")
-
-    # LLM parameters
-    llm_top_t: Optional[int] = Field(
-        default=None, ge=1, le=20, description="LLM rerank top-T")
-    llm_model: Optional[str] = Field(
-        default=None, description="LLM model name")
-    llm_timeout: Optional[int] = Field(
-        default=None, ge=1, le=300, description="LLM timeout seconds")
-    w_llm: Optional[float] = Field(
-        default=None, ge=0.0, le=5.0, description="LLM weight")
 
     # Final output
     final_top_k: Optional[int] = Field(

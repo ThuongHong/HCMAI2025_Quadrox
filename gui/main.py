@@ -320,71 +320,8 @@ def load_available_keywords():
     return sorted(list(keywords_set))  # Return sorted list
 
 
-def get_image_caption(image_path, api_base_url):
-    """Fetch generated caption for an image from the Vietnamese captioning system"""
-    try:
-        # Try to get caption from the captioning service
-        caption_url = f"{api_base_url}/api/caption"
-
-        # Check if the image file exists
-        if not os.path.exists(image_path):
-            return None
-
-        # Prepare the request
-        with open(image_path, 'rb') as img_file:
-            files = {'image': (os.path.basename(
-                image_path), img_file, 'image/jpeg')}
-            data = {
-                'style': 'dense',  # Use dense style for detailed captions
-                'allow_fallback': True  # Allow fallback to BLIP if Vintern fails
-            }
-
-            response = requests.post(
-                caption_url, files=files, data=data, timeout=30)
-
-            if response.status_code == 200:
-                result = response.json()
-                if 'caption' in result and result.get('success', False):
-                    return {
-                        'caption': result['caption'],
-                        'style': result.get('style', 'dense'),
-                        'source': result.get('source', 'unknown'),
-                        'processing_time': result.get('processing_time_ms', 0)
-                    }
-            elif response.status_code == 500:
-                # API returned error but might have fallback info
-                try:
-                    result = response.json()
-                    if 'caption' in result and result['caption'] != "Caption generation failed":
-                        return {
-                            'caption': result['caption'],
-                            'style': result.get('style', 'dense'),
-                            'source': result.get('source', 'fallback'),
-                            'processing_time': result.get('processing_time_ms', 0)
-                        }
-                except:
-                    pass
-
-        return None
-
-    except requests.exceptions.RequestException as e:
-        # Network or API error
-        st.warning(f"Could not fetch caption from API: {e}")
-        return None
-    except Exception as e:
-        # Other errors
-        st.warning(f"Error processing caption request: {e}")
-        return None
-
-
-@st.cache_data
-def get_cached_caption(image_path, api_base_url):
-    """Get caption with caching to avoid repeated API calls"""
-    return get_image_caption(image_path, api_base_url)
-
 
 # Functions
-
 def open_in_mpc(video_url, start_time=0):
     """Open video in MPC-HC using yt-dlp"""
     try:
@@ -656,63 +593,6 @@ def show_metadata_only(metadata, keyframe_index):
             with met_col3:
                 if 'group_id' in metadata:
                     st.metric("📁 Group ID", metadata['group_id'])
-
-        st.markdown("---")
-
-        # AI Generated Caption Section
-        st.markdown("### 🤖 AI Generated Caption")
-
-        # Try to get caption from API
-        image_path = metadata.get('path', '')
-        if image_path and os.path.exists(image_path):
-            with st.spinner("🔄 Generating caption..."):
-                caption_data = get_cached_caption(
-                    image_path, st.session_state.api_base_url)
-
-            if caption_data:
-                # Display caption with metadata
-                caption_text = caption_data['caption']
-                source_info = caption_data.get('source', 'unknown')
-                style_info = caption_data.get('style', 'dense')
-                processing_time = caption_data.get('processing_time', 0)
-
-                # Caption display with source info
-                st.markdown(f"""
-                <div class="info-card" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 4px solid #2196f3;">
-                    <div class="info-label">🤖 AI Caption ({source_info.upper()} - {style_info})</div>
-                    <div class="info-value" style="font-size: 1.1rem; line-height: 1.5; font-style: italic;">
-                        "{caption_text}"
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Caption metadata in smaller text
-                col_cap1, col_cap2 = st.columns(2)
-                with col_cap1:
-                    st.caption(f"🔧 Model: {source_info}")
-                with col_cap2:
-                    if processing_time > 0:
-                        st.caption(f"⏱️ Generated in: {processing_time:.0f}ms")
-
-            else:
-                # Show fallback message
-                st.markdown(f"""
-                <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
-                    <div class="info-label">🤖 AI Caption</div>
-                    <div class="info-value" style="color: #666; font-style: italic;">
-                        Caption not available - Vietnamese captioning service may be offline
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="info-card" style="background: #f5f5f5; border-left: 4px solid #9e9e9e;">
-                <div class="info-label">🤖 AI Caption</div>
-                <div class="info-value" style="color: #666; font-style: italic;">
-                    Image file not found
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -1285,9 +1165,6 @@ with st.expander("🔍 Metadata Filters", expanded=False):
                 key="keywords_multiselect"
             )
 
-            # if len(available_keywords) > 20:
-            #     st.caption(f"📊 Showing {len(display_keywords)} of {len(available_keywords)} keywords. Use search to find more.")
-
         else:
             # Manual input fallback
             keywords_input = st.text_input(
@@ -1463,12 +1340,9 @@ st.markdown("### ⚡ Rerank Options")
 # Initialize rerank variables with defaults
 enable_rerank = False
 rerank_superglobal_enabled = False
-rerank_caption_enabled = False
-rerank_llm_enabled = False
 rerank_final_top_k = 10
 sg_top_t = 50
-cap_top_t = 20
-llm_top_t = 20
+
 
 with st.expander("🎯 Multi-Stage Reranking", expanded=False):
     st.markdown(
@@ -1478,7 +1352,7 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
     enable_rerank = st.checkbox(
         "Apply Multi-Stage Reranking",
         value=False,
-        help="Apply advanced reranking pipeline (SuperGlobal + Caption + LLM) to improve result quality"
+        help="Apply advanced reranking pipeline (SuperGlobal) to improve result quality"
     )
 
     if enable_rerank:
@@ -1504,54 +1378,6 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
                     help="Number of candidates for SuperGlobal reranking"
                 )
 
-            st.markdown("**🏷️ Caption Reranking**")
-            rerank_caption_enabled = st.checkbox(
-                "Enable Caption rerank",
-                value=True,
-                help="Rerank using Vietnamese image captions"
-            )
-
-            if rerank_caption_enabled:
-                rerank_caption_weight = st.slider(
-                    "Caption weight",
-                    min_value=0.0, max_value=1.0, value=0.4, step=0.1,
-                    help="Weight for caption similarity scores"
-                )
-                cap_top_t = st.slider(
-                    "Caption top_t",
-                    min_value=10, max_value=100, value=20, step=5,
-                    help="Number of candidates for caption reranking"
-                )
-                rerank_caption_timeout = st.slider(
-                    "Caption timeout (seconds)",
-                    min_value=10, max_value=120, value=30, step=5,
-                    help="Timeout for caption generation"
-                )
-
-        with col_rerank2:
-            st.markdown("**🧠 LLM Reranking**")
-            rerank_llm_enabled = st.checkbox(
-                "Enable LLM rerank",
-                value=False,
-                help="High-quality reranking using Large Language Models"
-            )
-
-            if rerank_llm_enabled:
-                rerank_llm_weight = st.slider(
-                    "LLM weight",
-                    min_value=0.0, max_value=1.0, value=0.2, step=0.1,
-                    help="Weight for LLM similarity scores"
-                )
-                llm_top_t = st.slider(
-                    "LLM top_t",
-                    min_value=5, max_value=50, value=20, step=5,
-                    help="Number of candidates for LLM reranking"
-                )
-                rerank_llm_timeout = st.slider(
-                    "LLM timeout (seconds)",
-                    min_value=30, max_value=300, value=60, step=10,
-                    help="Timeout for LLM processing"
-                )
 
             st.markdown("**⚙️ Advanced Settings**")
             rerank_cache_enabled = st.checkbox(
@@ -1574,7 +1400,7 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
             )
 
         # Show rerank configuration summary
-        if any([rerank_superglobal_enabled, rerank_caption_enabled, rerank_llm_enabled]):
+        if any([rerank_superglobal_enabled]):
             st.markdown("---")
             st.markdown("**🎯 Rerank Pipeline Summary:**")
 
@@ -1582,12 +1408,6 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
             if rerank_superglobal_enabled:
                 stages.append(
                     f"SuperGlobal (top_t: {sg_top_t})")
-            if rerank_caption_enabled:
-                stages.append(
-                    f"Caption (top_t: {cap_top_t})")
-            if rerank_llm_enabled:
-                stages.append(
-                    f"LLM (top_t: {llm_top_t})")
 
             for i, stage in enumerate(stages, 1):
                 st.info(f"**Stage {i}:** {stage}")
@@ -1615,17 +1435,7 @@ with st.expander("🔍 Object Detection Filters", expanded=False):
             object_categories = objects_data['categories']
             objects_metadata = objects_data['metadata']
 
-            # Display source information
-            # if 'source' in objects_metadata and objects_metadata['source'] == 'fallback_coco_objects':
-            #     st.info(
-            #         "🔄 Using default COCO objects. Run migration script to load detected objects.")
-            # else:
-            #     st.success(
-            #         f"✅ Loaded {len(available_objects)} objects from detection results")
-            #     if 'migration_date' in objects_metadata:
-            #         st.caption(f"📅 Updated: {objects_metadata['migration_date']}")
 
-            # Smart Object Selection with Multiple Methods
             st.markdown("**🎯 Object Selection Method**")
 
             selection_method = st.radio(
@@ -2060,26 +1870,12 @@ with col_search1:
                         else:
                             params["rr_superglobal"] = 0
 
-                        if rerank_caption_enabled:
-                            params["rr_caption"] = 1
-                            params["cap_top_t"] = cap_top_t
-                        else:
-                            params["rr_caption"] = 0
-
-                        if rerank_llm_enabled:
-                            params["rr_llm"] = 1
-                            params["llm_top_t"] = llm_top_t
-                        else:
-                            params["rr_llm"] = 0
 
                         # Show rerank info
                         rerank_methods = []
                         if params.get("rr_superglobal"):
                             rerank_methods.append("SuperGlobal")
-                        if params.get("rr_caption"):
-                            rerank_methods.append("Caption")
-                        if params.get("rr_llm"):
-                            rerank_methods.append("LLM")
+                        # SG only
 
                         st.info(
                             f"⚡ Reranking enabled: {' + '.join(rerank_methods)} → {params['top_k']} results")
@@ -2151,6 +1947,8 @@ with col_search1:
                         results = response.json()
                         st.session_state.search_results = results
                         st.session_state.search_query = query
+                        # Store rerank settings for later use in metadata display
+                        st.session_state.last_search_rerank_enabled = enable_rerank
                         st.rerun()
                     else:
                         st.error(
@@ -2191,6 +1989,8 @@ with col_search2:
                         results = response.json()
                         st.session_state.search_results = results
                         st.session_state.search_query = f"Image: {uploaded_file.name}"
+                        # Store rerank settings for image search (no rerank for image search)
+                        st.session_state.last_search_rerank_enabled = False
                         st.rerun()
                     else:
                         st.error(

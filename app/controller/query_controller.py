@@ -1,13 +1,13 @@
 from schema.request import MetadataFilter, ObjectFilter
+# Agent
 from agent.agent import VisualEventExtractor
 from llama_index.core.llms import LLM
+
 from schema.response import KeyframeServiceReponse
 from service import ModelService, KeyframeQueryService
 from pathlib import Path
 import json
 from typing import Optional, Dict, Any
-from PIL import Image
-
 # Import rerank components
 from retrieval.rerank import RerankPipeline, RerankOptions
 from core.settings import RerankSettings
@@ -21,7 +21,6 @@ ROOT_DIR = os.path.abspath(
 )
 
 sys.path.insert(0, ROOT_DIR)
-
 
 class QueryController:
 
@@ -46,15 +45,8 @@ class QueryController:
         self.rerank_config = rerank_config or RerankSettings()
         self.rerank_pipeline = RerankPipeline(
             model_service=model_service,
-            cache_base_dir="./cache"
+            cache_base_dir="./cache",
         )
-        self.data_folder = data_folder
-        self.id2index = json.load(open(id2index_path, 'r'))
-        self.model_service = model_service
-        self.keyframe_service = keyframe_service
-        self.llm = llm
-        self.visual_extractor = VisualEventExtractor(
-            llm) if llm is not None else None
 
     def convert_model_to_path(
         self,
@@ -88,7 +80,6 @@ class QueryController:
             'thumbnail_url': keyframe.thumbnail_url,
             'watch_url': keyframe.watch_url,
             'objects': keyframe.objects,  # Include detected objects
-            'caption': getattr(getattr(keyframe, 'metadata', None) or {}, 'caption', None),
         }
 
     def _extract_rerank_params(self, request_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -100,22 +91,11 @@ class QueryController:
             'rerank': 'enable',
             'rerank_mode': 'mode',
             'rr_superglobal': 'enable_superglobal',
-            'rr_caption': 'enable_caption',
-            'rr_llm': 'enable_llm',
             'sg_top_m': 'sg_top_m',
             'sg_qexp_k': 'sg_qexp_k',
             'sg_img_knn': 'sg_img_knn',
             'sg_gem_p': 'sg_gem_p',
             'w_sg': 'w_sg',
-            'cap_top_t': 'cap_top_t',
-            'cap_model': 'cap_model',
-            'cap_max_tokens': 'cap_max_tokens',
-            'cap_temp': 'cap_temp',
-            'w_cap': 'w_cap',
-            'llm_top_t': 'llm_top_t',
-            'llm_model': 'llm_model',
-            'llm_timeout': 'llm_timeout',
-            'w_llm': 'w_llm',
             'final_top_k': 'final_top_k',
             # Add new cache and fallback flags
             'rerank_cache_enabled': 'cache_enabled',
@@ -140,24 +120,12 @@ class QueryController:
                 'RERANK_ENABLE': self.rerank_config.RERANK_ENABLE,
                 'RERANK_MODE': self.rerank_config.RERANK_MODE,
                 'RERANK_ENABLE_SUPERGLOBAL': self.rerank_config.RERANK_ENABLE_SUPERGLOBAL,
-                'RERANK_ENABLE_CAPTION': self.rerank_config.RERANK_ENABLE_CAPTION,
-                'RERANK_ENABLE_LLM': self.rerank_config.RERANK_ENABLE_LLM,
                 'RERANK_SG_TOP_M': self.rerank_config.RERANK_SG_TOP_M,
                 'RERANK_SG_QEXP_K': self.rerank_config.RERANK_SG_QEXP_K,
                 'RERANK_SG_IMG_KNN': self.rerank_config.RERANK_SG_IMG_KNN,
                 'RERANK_SG_GEM_P': self.rerank_config.RERANK_SG_GEM_P,
                 'RERANK_SG_SCORE_WEIGHT': self.rerank_config.RERANK_SG_SCORE_WEIGHT,
-                'RERANK_CAPTION_TOP_T': self.rerank_config.RERANK_CAPTION_TOP_T,
-                'RERANK_CAPTION_MODEL_NAME': self.rerank_config.RERANK_CAPTION_MODEL_NAME,
-                'RERANK_CAPTION_MAX_NEW_TOKENS': self.rerank_config.RERANK_CAPTION_MAX_NEW_TOKENS,
-                'RERANK_CAPTION_TEMPERATURE': self.rerank_config.RERANK_CAPTION_TEMPERATURE,
-                'RERANK_CAPTION_SCORE_WEIGHT': self.rerank_config.RERANK_CAPTION_SCORE_WEIGHT,
-                'RERANK_LLM_TOP_T': self.rerank_config.RERANK_LLM_TOP_T,
-                'RERANK_LLM_MODEL_NAME': self.rerank_config.RERANK_LLM_MODEL_NAME,
-                'RERANK_LLM_TIMEOUT_S': self.rerank_config.RERANK_LLM_TIMEOUT_S,
-                'RERANK_LLM_SCORE_WEIGHT': self.rerank_config.RERANK_LLM_SCORE_WEIGHT,
                 'RERANK_FINAL_TOP_K': self.rerank_config.RERANK_FINAL_TOP_K,
-                # Add cache and fallback defaults from config
                 'RERANK_CACHE_ENABLED': getattr(self.rerank_config, 'RERANK_CACHE_ENABLED', True),
                 'RERANK_FALLBACK_ENABLED': getattr(self.rerank_config, 'RERANK_FALLBACK_ENABLED', True),
             }

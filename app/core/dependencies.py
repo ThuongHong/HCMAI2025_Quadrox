@@ -1,9 +1,9 @@
 
 from dotenv import load_dotenv
+from core.logger import SimpleLogger
 from llama_index.core.llms import LLM
 from controller.agent_controller import AgentController
 from llama_index.llms.google_genai import GoogleGenAI
-from core.logger import SimpleLogger
 from factory.factory import ServiceFactory
 from core.settings import KeyFrameIndexMilvusSetting, MongoDBSettings, AppSettings, RerankSettings
 from service import ModelService, KeyframeQueryService
@@ -28,14 +28,12 @@ logger = SimpleLogger(__name__)
 
 load_dotenv()
 
-
 @lru_cache
 def get_llm() -> LLM:
     return GoogleGenAI(
         'gemini-2.5-flash-lite',
         api_key=os.getenv('GEMINI_API_KEY')
     )
-
 
 @lru_cache()
 def get_app_settings():
@@ -73,6 +71,7 @@ def get_service_factory(request: Request) -> ServiceFactory:
     return service_factory
 
 
+# Agent controller 
 def get_agent_controller(
     service_factory=Depends(get_service_factory),
     app_settings: AppSettings = Depends(get_app_settings)
@@ -94,7 +93,6 @@ def get_agent_controller(
         asr_data_path=asr_data_path,
         top_k=50
     )
-
 
 def get_model_service(service_factory: ServiceFactory = Depends(get_service_factory)) -> ModelService:
     try:

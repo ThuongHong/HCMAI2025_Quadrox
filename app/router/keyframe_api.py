@@ -69,10 +69,14 @@ async def search_keyframes(
     logger.info(
         f"Text search: '{request.query}' | top_k={request.top_k}, threshold={request.score_threshold}")
 
-    # Extract rerank parameters from request
+    # Extract rerank parameters (SuperGlobal only)
     rerank_params = {}
     for field, value in request.dict().items():
-        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+        if value is None:
+            continue
+        if field.startswith(('rerank', 'rr_', 'sg_')):
+            rerank_params[field] = value
+        elif field in ('w_sg', 'final_top_k'):
             rerank_params[field] = value
 
     results = await controller.search_text(
@@ -134,10 +138,14 @@ async def search_keyframes_exclude_groups(
     logger.info(
         f"Text search with group exclusion: query='{request.query}', exclude_groups={request.exclude_groups}")
 
-    # Extract rerank parameters from request
+    # Extract rerank parameters from request (SG only)
     rerank_params = {}
     for field, value in request.dict().items():
-        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+        if value is None:
+            continue
+        if field.startswith(('rerank', 'rr_', 'sg_')):
+            rerank_params[field] = value
+        elif field in ('w_sg', 'final_top_k'):
             rerank_params[field] = value
 
     results: list[KeyframeServiceReponse] = await controller.search_text_with_exlude_group(
@@ -366,26 +374,17 @@ async def search_keyframes_with_metadata_filter(
     
     This endpoint provides full control over the multi-stage reranking pipeline including:
     - **SuperGlobal reranking**: Fast global feature aggregation
-    - **Caption reranking**: Vietnamese caption generation and matching
-    - **LLM reranking**: Direct relevance scoring with multimodal LLM
+
     
     **Rerank Parameters:**
     - **rerank**: Enable reranking (0=off, 1=on)
     - **rerank_mode**: "auto" (system decides) or "custom" (manual control)
-    - **rr_superglobal**, **rr_caption**, **rr_llm**: Enable individual methods
-    - **sg_top_m**, **cap_top_t**, **llm_top_t**: Control processing scope
-    - **w_sg**, **w_cap**, **w_llm**: Adjust method weights
-    
+
     **Example URLs:**
     ```
     # SuperGlobal only (fast)
     /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=0&rr_llm=0
     
-    # SuperGlobal + Caption (moderate speed)
-    /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=1&cap_top_t=15
-    
-    # Full pipeline (slower but most accurate)
-    /search/advanced?q=người đàn ông&rerank=1&rr_superglobal=1&rr_caption=1&rr_llm=1&llm_top_t=3
     ```
     """,
     response_description="List of reranked keyframes with confidence scores"
@@ -404,13 +403,9 @@ async def search_keyframes_advanced(
     rerank_mode: Optional[str] = Query(
         default=None, description="Reranking mode: auto or custom"),
 
-    # Rerank method switches
+    # Rerank method switches (SG only)
     rr_superglobal: Optional[int] = Query(
         default=None, description="Enable SuperGlobal rerank (0=off, 1=on)"),
-    rr_caption: Optional[int] = Query(
-        default=None, description="Enable Caption rerank (0=off, 1=on)"),
-    rr_llm: Optional[int] = Query(
-        default=None, description="Enable LLM rerank (0=off, 1=on)"),
 
     # SuperGlobal parameters
     sg_top_m: Optional[int] = Query(
@@ -423,28 +418,6 @@ async def search_keyframes_advanced(
         default=None, ge=0.1, le=10.0, description="GeM pooling parameter"),
     w_sg: Optional[float] = Query(
         default=None, ge=0.0, le=5.0, description="SuperGlobal weight"),
-
-    # Caption parameters
-    cap_top_t: Optional[int] = Query(
-        default=None, ge=1, le=100, description="Caption rerank top-T"),
-    cap_model: Optional[str] = Query(
-        default=None, description="Caption model name"),
-    cap_max_tokens: Optional[int] = Query(
-        default=None, ge=1, le=512, description="Caption max tokens"),
-    cap_temp: Optional[float] = Query(
-        default=None, ge=0.0, le=2.0, description="Caption temperature"),
-    w_cap: Optional[float] = Query(
-        default=None, ge=0.0, le=5.0, description="Caption weight"),
-
-    # LLM parameters
-    llm_top_t: Optional[int] = Query(
-        default=None, ge=1, le=20, description="LLM rerank top-T"),
-    llm_model: Optional[str] = Query(
-        default=None, description="LLM model name"),
-    llm_timeout: Optional[int] = Query(
-        default=None, ge=1, le=300, description="LLM timeout seconds"),
-    w_llm: Optional[float] = Query(
-        default=None, ge=0.0, le=5.0, description="LLM weight"),
 
     # Final output
     final_top_k: Optional[int] = Query(
@@ -470,27 +443,21 @@ async def search_keyframes_advanced(
 
     logger.info(f"Advanced search: query='{q}', rerank={rerank}")
 
-    # Build rerank params from query parameters
+    # Build rerank params from query parameters (SG only)
     rerank_params = {}
     local_vars = locals()
-    for param_name in ['rerank', 'rerank_mode', 'rr_superglobal', 'rr_caption', 'rr_llm',
+    for param_name in ['rerank', 'rerank_mode', 'rr_superglobal',
                        'sg_top_m', 'sg_qexp_k', 'sg_img_knn', 'sg_gem_p', 'w_sg',
-                       'cap_top_t', 'cap_model', 'cap_max_tokens', 'cap_temp', 'w_cap',
-                       'llm_top_t', 'llm_model', 'llm_timeout', 'w_llm', 'final_top_k']:
+                       'final_top_k']:
         if param_name in local_vars and local_vars[param_name] is not None:
             rerank_params[param_name] = local_vars[param_name]
 
-    # Validate rerank parameters
+    # Validate rerank parameters (SG only)
     if rerank_params.get('rerank') == 1 and rerank_params.get('rerank_mode') == 'custom':
-        methods_enabled = any([
-            rerank_params.get('rr_superglobal') == 1,
-            rerank_params.get('rr_caption') == 1,
-            rerank_params.get('rr_llm') == 1
-        ])
-        if not methods_enabled:
+        if rerank_params.get('rr_superglobal') != 1:
             raise HTTPException(
                 status_code=400,
-                detail="When rerank=1 and rerank_mode=custom, at least one rerank method (rr_superglobal, rr_caption, rr_llm) must be enabled. Try: rr_superglobal=1"
+                detail="When rerank=1 and rerank_mode=custom, rr_superglobal=1 must be enabled."
             )
 
     # Parse filters if provided
