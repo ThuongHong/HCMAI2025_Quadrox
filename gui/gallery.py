@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import csv
 from pathlib import Path
 from datetime import datetime
 import re
@@ -73,7 +74,7 @@ def load_keyframe_mapping(video_full_id):
     
     return None
 
-def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=None, append_mode=False):
+def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=None, append_mode=False, export_mode="KIS", qa_question="", num_scenes=3):
     """Export processed keyframes to CSV in submission format"""
     try:
         project_root = Path("..")
@@ -84,38 +85,101 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
         if not filename.endswith('.csv'):
             filename += '.csv'
         
-        # Prepare data for CSV
+        # Prepare data for CSV based on mode
         csv_data = []
-        for keyframe_info in processed_keyframes:
-            csv_data.append({
-                'video_id': keyframe_info['video_full_id'],
-                'frame_idx': keyframe_info['real_frame_idx']
-            })
         
-        # Create DataFrame
-        df = pd.DataFrame(csv_data)
+        if export_mode == "KIS":
+            # Original KIS format: video_id, frame_idx
+            for keyframe_info in processed_keyframes:
+                csv_data.append({
+                    'video_id': keyframe_info['video_full_id'],
+                    'frame_idx': keyframe_info['real_frame_idx']
+                })
+            
+            # Create DataFrame
+            df = pd.DataFrame(csv_data)
+            
+        elif export_mode == "QA":
+            # QA format: video_id, frame_idx, answer (in quotes)
+            for keyframe_info in processed_keyframes:
+                csv_data.append({
+                    'video_id': keyframe_info['video_full_id'],
+                    'frame_idx': keyframe_info['real_frame_idx'],
+                    'answer': qa_question  # Don't add quotes here, CSV will handle it
+                })
+            
+            # Create DataFrame
+            df = pd.DataFrame(csv_data)
+            
+        elif export_mode == "TRAKE":
+            # TRAKE format: dynamic columns based on num_scenes
+            # Group keyframes by video
+            video_groups = {}
+            for keyframe_info in processed_keyframes:
+                video_id = keyframe_info['video_full_id']
+                if video_id not in video_groups:
+                    video_groups[video_id] = []
+                video_groups[video_id].append(keyframe_info['real_frame_idx'])
+            
+            # Create rows with num_scenes columns
+            for video_id, frame_list in video_groups.items():
+                # Limit to num_scenes frames
+                limited_frames = frame_list[:num_scenes]
+                
+                # Create row data as list in correct order: [video_id, scene_1, scene_2, ...]
+                row_data = [video_id]
+                for i in range(num_scenes):
+                    if i < len(limited_frames):
+                        row_data.append(limited_frames[i])
+                    else:
+                        row_data.append('')  # Empty for unused scenes
+                
+                csv_data.append(row_data)
+            
+            # Create DataFrame with proper column order
+            columns = ['video_id'] + [f'scene_{i+1}' for i in range(num_scenes)]
+            df = pd.DataFrame(csv_data, columns=columns)
         
         if append_mode and Path(filename).exists():
             # Read existing CSV and append new data
             try:
-                existing_df = pd.read_csv(filename, header=None, names=['video_id', 'frame_idx'])
+                if export_mode == "KIS":
+                    existing_df = pd.read_csv(filename, header=None, names=['video_id', 'frame_idx'])
+                elif export_mode == "QA":
+                    existing_df = pd.read_csv(filename, header=None, names=['video_id', 'frame_idx', 'answer'])
+                elif export_mode == "TRAKE":
+                    # For TRAKE, read with dynamic columns
+                    existing_df = pd.read_csv(filename)
+                
                 combined_df = pd.concat([existing_df, df], ignore_index=True)
                 
-                # Remove duplicates if any (based on video_id and frame_idx)
-                combined_df = combined_df.drop_duplicates(subset=['video_id', 'frame_idx'])
+                # Remove duplicates if any (based on video_id and frame_idx for KIS/QA)
+                if export_mode in ["KIS", "QA"]:
+                    combined_df = combined_df.drop_duplicates(subset=['video_id', 'frame_idx'])
+                elif export_mode == "TRAKE":
+                    combined_df = combined_df.drop_duplicates(subset=['video_id'])
                 
                 # Save combined data
-                combined_df.to_csv(filename, index=False, header=False, encoding='utf-8')
+                if export_mode == "QA":
+                    # For QA mode, ensure quotes around answer
+                    combined_df['answer'] = combined_df['answer'].apply(lambda x: f'"{x}"')
+                combined_df.to_csv(filename, index=False, header=False, encoding='utf-8', quoting=csv.QUOTE_NONE, escapechar='\\')
                 
                 return True, len(csv_data), filename, len(combined_df)  # Return both new count and total count
             except Exception as e:
                 st.warning(f"Could not read existing CSV, creating new file: {e}")
                 # Fall back to creating new file
-                df.to_csv(filename, index=False, header=False, encoding='utf-8')
+                if export_mode == "QA":
+                    # For QA mode, ensure quotes around answer
+                    df['answer'] = df['answer'].apply(lambda x: f'"{x}"')
+                df.to_csv(filename, index=False, header=False, encoding='utf-8', quoting=csv.QUOTE_NONE, escapechar='\\')
                 return True, len(csv_data), filename, len(csv_data)
         else:
             # Create new file or overwrite
-            df.to_csv(filename, index=False, header=False, encoding='utf-8')
+            if export_mode == "QA":
+                # For QA mode, ensure quotes around answer
+                df['answer'] = df['answer'].apply(lambda x: f'"{x}"')
+            df.to_csv(filename, index=False, header=False, encoding='utf-8', quoting=csv.QUOTE_NONE, escapechar='\\')
             return True, len(csv_data), filename, len(csv_data)
     
     except Exception as e:
@@ -207,6 +271,17 @@ if 'gallery_csv_filename' not in st.session_state:
 # SIMPLE: Only track current video's checked keyframes
 if 'current_video_checked' not in st.session_state:
     st.session_state.current_video_checked = set()
+# Mode selection
+if 'export_mode' not in st.session_state:
+    st.session_state.export_mode = "KIS"
+# QA mode question
+if 'qa_question' not in st.session_state:
+    st.session_state.qa_question = ""
+# TRAKE mode settings
+if 'trake_num_scenes' not in st.session_state:
+    st.session_state.trake_num_scenes = 3
+if 'trake_video_selections' not in st.session_state:
+    st.session_state.trake_video_selections = {}  # {video_id: [frame1, frame2, ...]}
 
 # Header
 st.markdown("""
@@ -234,9 +309,52 @@ st.success(f"✅ Found {len(structure)} groups with {total_videos} total videos"
 # Filter Section
 st.markdown("""
 <div class="filter-section">
-    <h3 style="margin-top: 0;">🎯 Select Group and Video</h3>
+    <h3 style="margin-top: 0;">🎯 Select Export Mode, Group and Video</h3>
 </div>
 """, unsafe_allow_html=True)
+
+# Mode selection row
+col_mode1, col_mode2, col_mode3 = st.columns([2, 2, 2])
+
+with col_mode1:
+    export_mode = st.selectbox(
+        "📋 Export Mode",
+        options=["KIS", "QA", "TRAKE"],
+        index=["KIS", "QA", "TRAKE"].index(st.session_state.export_mode),
+        help="Choose export format:\n• KIS: video_id, frame_idx\n• QA: video_id, frame_idx, answer\n• TRAKE: video_id, scene_1, scene_2, ...",
+        key="export_mode_selector"
+    )
+    st.session_state.export_mode = export_mode
+
+with col_mode2:
+    if export_mode == "QA":
+        qa_question = st.text_input(
+            "❓ Answer",
+            value=st.session_state.qa_question,
+            placeholder="Enter answer for QA mode...",
+            help="Answer will be wrapped in quotes in CSV",
+            key="qa_question_input"
+        )
+        st.session_state.qa_question = qa_question
+    elif export_mode == "TRAKE":
+        trake_num_scenes = st.number_input(
+            "🎬 Number of Scenes",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.trake_num_scenes,
+            help="Maximum scenes per video in TRAKE mode",
+            key="trake_scenes_input"
+        )
+        st.session_state.trake_num_scenes = trake_num_scenes
+
+with col_mode3:
+    # Mode info display
+    if export_mode == "KIS":
+        st.info("📊 Format: video_id, frame_idx")
+    elif export_mode == "QA":
+        st.info("📊 Format: video_id, frame_idx, \"answer\"")
+    elif export_mode == "TRAKE":
+        st.info(f"📊 Format: video_id, scene_1, ..., scene_{trake_num_scenes}")
 
 col_filter1, col_filter2, col_filter3 = st.columns([2, 2, 2])
 
@@ -325,106 +443,154 @@ if selected_group and selected_video:
         st.metric("🎥 Video", video_full_id if checked_count > 0 else "None")
     
     with col_stat3:
-        # Append mode toggle
-        append_mode = st.checkbox("📝 Append Mode", value=True, help="Append to existing CSV instead of overwriting")
+        # Show TRAKE limitation info
+        if export_mode == "TRAKE":
+            max_scenes = st.session_state.trake_num_scenes
+            if checked_count > max_scenes:
+                st.warning(f"⚠️ Only first {max_scenes} will be used")
+            else:
+                st.info(f"✅ Max {max_scenes} scenes")
+        else:
+            # Append mode toggle
+            append_mode = st.checkbox("📝 Append Mode", value=True, help="Append to existing CSV instead of overwriting")
     
     with col_stat4:
         # Export configuration (compact)
-        csv_filename = st.text_input(
-            "📁 Filename",
-            value=st.session_state.gallery_csv_filename,
-            help="CSV filename",
-            key="csv_filename_input",
-            label_visibility="collapsed",
-            placeholder="Enter CSV filename..."
-        )
+        if export_mode != "TRAKE":  # Append mode not shown for TRAKE in col_stat3
+            csv_filename = st.text_input(
+                "📁 Filename",
+                value=st.session_state.gallery_csv_filename,
+                help="CSV filename",
+                key="csv_filename_input",
+                label_visibility="collapsed",
+                placeholder="Enter CSV filename..."
+            )
+        else:
+            # For TRAKE mode, also show append mode here
+            append_mode = st.checkbox("📝 Append Mode", value=True, help="Append to existing CSV instead of overwriting")
+            
+        if 'csv_filename' not in locals():
+            csv_filename = st.text_input(
+                "📁 Filename",
+                value=st.session_state.gallery_csv_filename,
+                help="CSV filename",
+                key="csv_filename_input2" if export_mode == "TRAKE" else "csv_filename_input",
+                label_visibility="collapsed",
+                placeholder="Enter CSV filename..."
+            )
+        
         if csv_filename != st.session_state.gallery_csv_filename:
             st.session_state.gallery_csv_filename = csv_filename
     
     with col_stat5:
         # Export button - Compact
         if checked_count > 0:
-            button_text = f"📤 {'Append' if append_mode else 'Export'} ({checked_count})"
-            button_disabled = False
+            # Check QA mode validation
+            if export_mode == "QA" and not st.session_state.qa_question.strip():
+                button_text = "📤 Need Answer"
+                button_disabled = True
+            else:
+                button_text = f"📤 {'Append' if append_mode else 'Export'} ({checked_count})"
+                button_disabled = False
         else:
             button_text = "📤 No items"
             button_disabled = True
     
     if st.button(button_text, type="primary", use_container_width=True, disabled=button_disabled):
         if csv_filename.strip():
-            with st.spinner(f"🔄 {'Appending' if append_mode else 'Exporting'} current video's keyframes..."):
-                # Collect checked keyframes from CURRENT VIDEO ONLY
-                processed_keyframes = []
-                
-                for keyframe_path in keyframes:
-                    n = int(keyframe_path.stem)
-                    checkbox_key = f"mark_{video_full_id}_{n}"
+            # Validate QA mode
+            if export_mode == "QA" and not st.session_state.qa_question.strip():
+                st.error("Please enter an answer for QA mode")
+            else:
+                with st.spinner(f"🔄 {'Appending' if append_mode else 'Exporting'} current video's keyframes..."):
+                    # Collect checked keyframes from CURRENT VIDEO ONLY
+                    processed_keyframes = []
                     
-                    if st.session_state.get(checkbox_key, False):  # Checkbox is checked
-                        try:
-                            # Get real frame_idx from mapping
-                            real_frame_idx = n  # Default fallback
-                            if mapping_df is not None:
-                                matching_row = mapping_df[mapping_df['n'] == n]
-                                if not matching_row.empty:
-                                    real_frame_idx = int(matching_row.iloc[0]['frame_idx'])
-                            
-                            processed_keyframes.append({
-                                'video_full_id': video_full_id,
-                                'n': n,
-                                'real_frame_idx': real_frame_idx
-                            })
-                        except Exception as e:
-                            st.warning(f"Error processing {keyframe_path.name}: {e}")
-                
-                # Export processed keyframes with append mode
-                if processed_keyframes:
-                    result = export_gallery_selection_to_csv(
-                        csv_filename, 
-                        processed_keyframes,
-                        None,  # We already processed the mapping above
-                        append_mode=append_mode  # Pass append mode
-                    )
-                    
-                    if len(result) == 4:  # New format with total count
-                        success, count, output_path, total_count = result
-                    else:  # Fallback to old format
-                        success, count, output_path = result
-                        total_count = count
-                    
-                    if success:
-                        if append_mode:
-                            st.success(f"✅ Appended {count} keyframes from {video_full_id} to {output_path}")
-                            st.info(f"📊 Total entries in file: {total_count}")
-                        else:
-                            st.success(f"✅ Exported {count} keyframes from {video_full_id} to {output_path}")
+                    for keyframe_path in keyframes:
+                        n = int(keyframe_path.stem)
+                        checkbox_key = f"mark_{video_full_id}_{n}"
                         
-                        # Clear current video's selections after successful export
-                        for keyframe_path in keyframes:
-                            n = int(keyframe_path.stem)
-                            checkbox_key = f"mark_{video_full_id}_{n}"
-                            st.session_state[checkbox_key] = False
-                        
-                        # Show export preview
-                        with st.expander("👀 Export Preview (first 10 rows)", expanded=True):
-                            preview_data = []
-                            for kf in processed_keyframes[:10]:
-                                preview_data.append({
-                                    'video_id': kf['video_full_id'],
-                                    'frame_idx': kf['real_frame_idx'],
-                                    'source_n': kf['n']
+                        if st.session_state.get(checkbox_key, False):  # Checkbox is checked
+                            try:
+                                # Get real frame_idx from mapping
+                                real_frame_idx = n  # Default fallback
+                                if mapping_df is not None:
+                                    matching_row = mapping_df[mapping_df['n'] == n]
+                                    if not matching_row.empty:
+                                        real_frame_idx = int(matching_row.iloc[0]['frame_idx'])
+                                
+                                processed_keyframes.append({
+                                    'video_full_id': video_full_id,
+                                    'n': n,
+                                    'real_frame_idx': real_frame_idx
                                 })
+                            except Exception as e:
+                                st.warning(f"Error processing {keyframe_path.name}: {e}")
+                    
+                    # For TRAKE mode, limit to num_scenes
+                    if export_mode == "TRAKE":
+                        max_scenes = st.session_state.trake_num_scenes
+                        if len(processed_keyframes) > max_scenes:
+                            processed_keyframes = processed_keyframes[:max_scenes]
+                            st.info(f"🎬 Limited to first {max_scenes} scenes for TRAKE mode")
+                    
+                    # Export processed keyframes with append mode
+                    if processed_keyframes:
+                        result = export_gallery_selection_to_csv(
+                            csv_filename, 
+                            processed_keyframes,
+                            None,  # We already processed the mapping above
+                            append_mode=append_mode,  # Pass append mode
+                            export_mode=export_mode,
+                            qa_question=st.session_state.qa_question,
+                            num_scenes=st.session_state.trake_num_scenes
+                        )
+                    
+                        
+                        if len(result) == 4:  # New format with total count
+                            success, count, output_path, total_count = result
+                        else:  # Fallback to old format
+                            success, count, output_path = result
+                            total_count = count
+                        
+                        if success:
+                            if append_mode:
+                                st.success(f"✅ Appended {count} keyframes from {video_full_id} to {output_path}")
+                                st.info(f"📊 Total entries in file: {total_count}")
+                            else:
+                                st.success(f"✅ Exported {count} keyframes from {video_full_id} to {output_path}")
                             
-                            preview_df = pd.DataFrame(preview_data)
-                            st.dataframe(preview_df, use_container_width=True)
+                            # Clear current video's selections after successful export
+                            for keyframe_path in keyframes:
+                                n = int(keyframe_path.stem)
+                                checkbox_key = f"mark_{video_full_id}_{n}"
+                                st.session_state[checkbox_key] = False
+                            
+                            # Show export preview
+                            with st.expander("👀 Export Preview (first 10 rows)", expanded=True):
+                                preview_data = []
+                                for kf in processed_keyframes[:10]:
+                                    row_data = {
+                                        'video_id': kf['video_full_id'],
+                                        'frame_idx': kf['real_frame_idx'],
+                                        'source_n': kf['n']
+                                    }
+                                    if export_mode == "QA":
+                                        row_data['answer'] = f'"{st.session_state.qa_question}"'
+                                    preview_data.append(row_data)
+                                
+                                preview_df = pd.DataFrame(preview_data)
+                                st.dataframe(preview_df, use_container_width=True)
+                        else:
+                            st.error("❌ Failed to export CSV")
                     else:
-                        st.error("❌ Failed to export CSV")
-                else:
-                    st.error("No keyframes marked for export. Please check some keyframes first.")
+                        st.error("No keyframes marked for export. Please check some keyframes first.")
         else:
             st.error("Please enter a valid filename")
     
-    st.markdown("---")    # Show mapping info and controls
+    st.markdown("---")
+    
+    # Show mapping info and controls
     col_map1, col_map2 = st.columns([3, 2])
     
     with col_map1:
@@ -443,12 +609,27 @@ if selected_group and selected_video:
         
         col_sel1, col_sel2 = st.columns(2)
         with col_sel1:
-            if st.button("✅ Check All", help="Check all keyframes in this video", use_container_width=True):
-                # Set all checkbox values to True for current video
-                for keyframe_path in keyframes:
-                    n = int(keyframe_path.stem)
-                    checkbox_key = f"mark_{video_full_id}_{n}"
-                    st.session_state[checkbox_key] = True
+            if export_mode == "TRAKE":
+                button_text = f"✅ Check First {st.session_state.trake_num_scenes}"
+                help_text = f"Check first {st.session_state.trake_num_scenes} keyframes (TRAKE limit)"
+            else:
+                button_text = "✅ Check All"
+                help_text = "Check all keyframes in this video"
+                
+            if st.button(button_text, help=help_text, use_container_width=True):
+                if export_mode == "TRAKE":
+                    # Only check up to trake_num_scenes
+                    max_scenes = st.session_state.trake_num_scenes
+                    for i, keyframe_path in enumerate(keyframes[:max_scenes]):
+                        n = int(keyframe_path.stem)
+                        checkbox_key = f"mark_{video_full_id}_{n}"
+                        st.session_state[checkbox_key] = True
+                else:
+                    # Set all checkbox values to True for current video
+                    for keyframe_path in keyframes:
+                        n = int(keyframe_path.stem)
+                        checkbox_key = f"mark_{video_full_id}_{n}"
+                        st.session_state[checkbox_key] = True
                 st.rerun()
         
         with col_sel2:
@@ -533,11 +714,39 @@ if selected_group and selected_video:
                     
                     # Checkbox for marking - SIMPLE VERSION (NO CALLBACK!)
                     checkbox_key = f"mark_{video_full_id}_{n}"
-                    is_checked = st.checkbox(
-                        "Mark",  # Shorter label
-                        value=st.session_state.get(checkbox_key, False),
-                        key=checkbox_key
-                    )
+                    current_checked = st.session_state.get(checkbox_key, False)
+                    
+                    # For TRAKE mode, check if we're at the limit
+                    if export_mode == "TRAKE":
+                        # Count currently checked for this video
+                        video_checked_count = sum(1 for kf_path in keyframes 
+                                                if st.session_state.get(f"mark_{video_full_id}_{int(kf_path.stem)}", False))
+                        
+                        max_scenes = st.session_state.trake_num_scenes
+                        
+                        # Disable checkbox if at limit and this one isn't already checked
+                        if video_checked_count >= max_scenes and not current_checked:
+                            st.checkbox(
+                                f"Mark (Max {max_scenes})",
+                                value=False,
+                                disabled=True,
+                                key=f"{checkbox_key}_disabled",
+                                help=f"Maximum {max_scenes} scenes allowed per video in TRAKE mode"
+                            )
+                        else:
+                            is_checked = st.checkbox(
+                                f"Mark ({video_checked_count}/{max_scenes})",
+                                value=current_checked,
+                                key=checkbox_key,
+                                help=f"Selected scenes: {video_checked_count}/{max_scenes}"
+                            )
+                    else:
+                        # Normal checkbox for KIS and QA modes
+                        is_checked = st.checkbox(
+                            "Mark",  # Shorter label
+                            value=current_checked,
+                            key=checkbox_key
+                        )
     else:
         st.warning(f"No keyframes found in {video_info['path']}")
 
