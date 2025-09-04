@@ -91,25 +91,25 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
         if export_mode == "KIS":
             # Original KIS format: video_id, frame_idx
             for keyframe_info in processed_keyframes:
-                csv_data.append({
-                    'video_id': keyframe_info['video_full_id'],
-                    'frame_idx': keyframe_info['real_frame_idx']
-                })
+                csv_data.append([
+                    keyframe_info['video_full_id'],
+                    keyframe_info['real_frame_idx']
+                ])
             
-            # Create DataFrame
-            df = pd.DataFrame(csv_data)
+            # Create DataFrame with explicit column order
+            df = pd.DataFrame(csv_data, columns=['video_id', 'frame_idx'])
             
         elif export_mode == "QA":
             # QA format: video_id, frame_idx, answer (in quotes)
             for keyframe_info in processed_keyframes:
-                csv_data.append({
-                    'video_id': keyframe_info['video_full_id'],
-                    'frame_idx': keyframe_info['real_frame_idx'],
-                    'answer': qa_question  # Don't add quotes here, CSV will handle it
-                })
+                csv_data.append([
+                    keyframe_info['video_full_id'],
+                    keyframe_info['real_frame_idx'],
+                    qa_question  # Don't add quotes here, CSV will handle it
+                ])
             
-            # Create DataFrame
-            df = pd.DataFrame(csv_data)
+            # Create DataFrame with explicit column order
+            df = pd.DataFrame(csv_data, columns=['video_id', 'frame_idx', 'answer'])
             
         elif export_mode == "TRAKE":
             # TRAKE format: dynamic columns based on num_scenes
@@ -148,16 +148,15 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
                 elif export_mode == "QA":
                     existing_df = pd.read_csv(filename, header=None, names=['video_id', 'frame_idx', 'answer'])
                 elif export_mode == "TRAKE":
-                    # For TRAKE, read with dynamic columns
-                    existing_df = pd.read_csv(filename)
+                    # For TRAKE, read with dynamic columns but no header
+                    # Generate column names based on current num_scenes
+                    columns = ['video_id'] + [f'scene_{i+1}' for i in range(num_scenes)]
+                    existing_df = pd.read_csv(filename, header=None, names=columns)
                 
                 combined_df = pd.concat([existing_df, df], ignore_index=True)
                 
-                # Remove duplicates if any (based on video_id and frame_idx for KIS/QA)
-                if export_mode in ["KIS", "QA"]:
-                    combined_df = combined_df.drop_duplicates(subset=['video_id', 'frame_idx'])
-                elif export_mode == "TRAKE":
-                    combined_df = combined_df.drop_duplicates(subset=['video_id'])
+                # Remove duplicates only when ALL columns are identical
+                combined_df = combined_df.drop_duplicates()
                 
                 # Save combined data
                 if export_mode == "QA":
