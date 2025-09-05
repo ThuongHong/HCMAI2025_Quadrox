@@ -74,7 +74,7 @@ python migration/metadata_migration.py --folder_path resources/metadata
 python migration/objects_migration.py --folder_path resources/objects
 ```
 
-7. **Download model**
+<!-- 7. **Download model**
 
 
 #### Model chính (Vintern - cần authentication):
@@ -110,9 +110,9 @@ python tools/precompute_captions.py \
     --max_new_tokens 64 \
     --max_workers 4 \
     --batch_size 20
-```
+``` -->
 
-8. **Run the applications**
+7. **Run the applications**
 
 Open two terminal tabs:
 

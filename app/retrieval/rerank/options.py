@@ -19,9 +19,14 @@ class RerankOptions:
     use_sg: bool = True
 
     # SuperGlobal parameters
-    sg_top_m: int = 500
+    sg_top_m: int = 400
     sg_qexp_k: int = 10
     sg_img_knn: int = 10
+    # New parameters per SuperGlobal
+    sg_alpha: float = 0.5
+    sg_beta: float = 1.8
+    sg_p_query: float = 100.0  # GeM power for query-side (~max)
+    # Backward-compat for legacy name
     sg_gem_p: float = 3.0
     w_sg: float = 1.0
 
@@ -41,9 +46,23 @@ class RerankOptions:
         # Clamp to safe ranges
         self.sg_top_m = max(1, min(10000, self.sg_top_m))
         self.sg_qexp_k = max(1, min(100, self.sg_qexp_k))
-        self.sg_img_knn = max(1, min(100, self.sg_img_knn))
-        self.sg_gem_p = max(0.1, min(10.0, self.sg_gem_p))
+        # Allow img_knn=0 to disable DB-refine
+        self.sg_img_knn = max(0, min(100, self.sg_img_knn))
+        self.sg_alpha = float(min(max(self.sg_alpha, 0.0), 1.0))
+        self.sg_beta = float(max(0.0, min(5.0, self.sg_beta)))
+        self.sg_p_query = float(max(1.0, min(1000.0, self.sg_p_query)))
+        self.sg_gem_p = max(0.1, min(1000.0, self.sg_gem_p))
         self.w_sg = max(0.0, min(5.0, self.w_sg))
+
+        # Backward-compat: if sg_p_query not explicitly set (default) but legacy provided, map it
+        # Heuristic: if user set sg_gem_p away from default 3.0 and didn't override sg_p_query, use sg_gem_p
+        try:
+            if 'sg_p_query' not in self.__dict__ or self.__dict__['sg_p_query'] == 100.0:
+                # If legacy value seems customized, map it
+                if self.sg_gem_p != 3.0:
+                    self.sg_p_query = float(self.sg_gem_p)
+        except Exception:
+            pass
 
         # Handle final_top_k: None or 0 means no limit, positive means limit
         if self.final_top_k is not None and self.final_top_k > 0:
@@ -115,9 +134,13 @@ class RerankOptions:
 
             use_sg=get_value("enable_superglobal", True, bool),
 
-            sg_top_m=get_value("sg_top_m", 500, int),
+            sg_top_m=get_value("sg_top_m", 400, int),
             sg_qexp_k=get_value("sg_qexp_k", 10, int),
             sg_img_knn=get_value("sg_img_knn", 10, int),
+            sg_alpha=get_value("sg_alpha", 0.5, float),
+            sg_beta=get_value("sg_beta", 1.8, float),
+            # Prefer sg_p_query, fall back to legacy sg_gem_p
+            sg_p_query=get_value("sg_p_query", None, float) if get_value("sg_p_query", None, float) is not None else get_value("sg_gem_p", 100.0, float),
             sg_gem_p=get_value("sg_gem_p", 3.0, float),
             w_sg=get_value("w_sg", 1.0, float),
 
@@ -142,6 +165,11 @@ class RerankOptions:
             "mode": self.mode,
             "use_sg": self.use_sg,
             "sg_top_m": self.sg_top_m,
+            "sg_qexp_k": self.sg_qexp_k,
+            "sg_img_knn": self.sg_img_knn,
+            "sg_alpha": self.sg_alpha,
+            "sg_beta": self.sg_beta,
+            "sg_p_query": self.sg_p_query,
             "final_top_k": self.final_top_k,
             "cache_enabled": self.cache_enabled,
             "fallback_enabled": self.fallback_enabled,

@@ -414,8 +414,14 @@ async def search_keyframes_advanced(
         default=None, ge=1, le=100, description="Query expansion K"),
     sg_img_knn: Optional[int] = Query(
         default=None, ge=1, le=100, description="Image KNN parameter"),
+    sg_alpha: Optional[float] = Query(
+        default=None, ge=0.0, le=1.0, description="SuperGlobal alpha blend"),
+    sg_beta: Optional[float] = Query(
+        default=None, ge=0.0, le=5.0, description="SuperGlobal beta exponent"),
+    sg_p_query: Optional[float] = Query(
+        default=None, ge=1.0, le=1000.0, description="Query-side GeM p (~max)"),
     sg_gem_p: Optional[float] = Query(
-        default=None, ge=0.1, le=10.0, description="GeM pooling parameter"),
+        default=None, ge=0.1, le=1000.0, description="Legacy GeM parameter (compat)"),
     w_sg: Optional[float] = Query(
         default=None, ge=0.0, le=5.0, description="SuperGlobal weight"),
 
@@ -447,7 +453,8 @@ async def search_keyframes_advanced(
     rerank_params = {}
     local_vars = locals()
     for param_name in ['rerank', 'rerank_mode', 'rr_superglobal',
-                       'sg_top_m', 'sg_qexp_k', 'sg_img_knn', 'sg_gem_p', 'w_sg',
+                       'sg_top_m', 'sg_qexp_k', 'sg_img_knn',
+                       'sg_alpha', 'sg_beta', 'sg_p_query', 'sg_gem_p', 'w_sg',
                        'final_top_k']:
         if param_name in local_vars and local_vars[param_name] is not None:
             rerank_params[param_name] = local_vars[param_name]

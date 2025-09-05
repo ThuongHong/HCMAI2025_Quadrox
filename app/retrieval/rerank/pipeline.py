@@ -62,11 +62,12 @@ class RerankPipeline:
                     query_emb = query_emb.tolist()
 
             cand_embs = base_embeddings
-            if cand_embs is None and self.model_service and options.use_sg:
-                logger.debug("Generating embeddings for SuperGlobal reranking")
-                cand_embs = []
-                for _ in base_candidates[: options.sg_top_m]:
-                    cand_embs.append([0.0] * 512)  # Mock embedding
+            # Strict: do not fabricate embeddings. Require caller to provide.
+            if cand_embs is None and options.use_sg:
+                raise ValueError(
+                    "SuperGlobal rerank requires candidate embeddings. "
+                    "Pass base_embeddings with shape (M,D)."
+                )
 
             # Run SuperGlobal stage
             method_results: Dict[str, List[Tuple[Any, float]]] = {}
@@ -142,9 +143,8 @@ class RerankPipeline:
         options: RerankOptions,
     ) -> List[Tuple[Any, float]]:
         """Run SuperGlobal reranking stage."""
-        if not query_embedding or not candidate_embeddings:
-            logger.warning("Missing embeddings for SuperGlobal, skipping")
-            return []
+        if query_embedding is None or candidate_embeddings is None:
+            raise ValueError("Missing embeddings for SuperGlobal stage")
 
         results = self.superglobal.rerank(
             query=query,
@@ -154,7 +154,9 @@ class RerankPipeline:
             top_m=options.sg_top_m,
             qexp_k=options.sg_qexp_k,
             img_knn=options.sg_img_knn,
-            gem_p=options.sg_gem_p,
+            beta=getattr(options, 'sg_beta', 1.8),
+            alpha=getattr(options, 'sg_alpha', 0.5),
+            p_query=(getattr(options, 'sg_p_query', None) if getattr(options, 'sg_p_query', None) is not None else getattr(options, 'sg_gem_p', 100.0)),
         )
         return results
 
