@@ -27,6 +27,10 @@ class KeyframeQueryService:
 
         self.keyframe_vector_repo = keyframe_vector_repo
         self.keyframe_mongo_repo = keyframe_mongo_repo
+        # Keep embedding map from last vector search (id -> embedding)
+        self._last_embedding_map: dict[int, list[float]] = {}
+        # Cache for deterministic query refinement: raw query -> (refined, objects)
+        self._refine_cache: dict[str, tuple[str, list[str]]] = {}
 
     async def _retrieve_keyframes(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys(ids)
@@ -75,6 +79,12 @@ class KeyframeQueryService:
             filtered_results, key=lambda r: r.distance, reverse=True
         )
 
+        # Build embedding map for rerank consumption
+        try:
+            self._last_embedding_map = {r.id_: r.embedding for r in sorted_results}
+        except Exception:
+            self._last_embedding_map = {}
+
         sorted_ids = [result.id_ for result in sorted_results]
 
         keyframes = await self._retrieve_keyframes(sorted_ids)
@@ -121,6 +131,12 @@ class KeyframeQueryService:
         sorted_results = sorted(
             filtered_results, key=lambda r: r.distance, reverse=True
         )
+
+        # Build embedding map for rerank consumption
+        try:
+            self._last_embedding_map = {r.id_: r.embedding for r in sorted_results}
+        except Exception:
+            self._last_embedding_map = {}
 
         sorted_ids = [result.id_ for result in sorted_results]
 
@@ -224,6 +240,12 @@ class KeyframeQueryService:
             filtered_results, key=lambda r: r.distance, reverse=True
         )
 
+        # Build embedding map for rerank consumption
+        try:
+            self._last_embedding_map = {r.id_: r.embedding for r in sorted_results}
+        except Exception:
+            self._last_embedding_map = {}
+
         sorted_ids = [result.id_ for result in sorted_results]
 
         # Apply metadata and object filtering
@@ -318,6 +340,11 @@ class KeyframeQueryService:
         3) Optionally extract relevant objects via VisualEventExtractor
         Fallback to original on any error or if LLM unavailable.
         """
+        # Deterministic caching for identical queries
+        if query in self._refine_cache:
+            cached = self._refine_cache[query]
+            return cached[0], cached[1]
+
         if llm is None:
             return query, []
 
@@ -335,7 +362,11 @@ class KeyframeQueryService:
         refined_text = query
         try:
             from schema.agent import QueryRefineResponse
-            resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
+            # Favor deterministic generation when supported by provider
+            try:
+                resp = await llm.as_structured_llm(QueryRefineResponse, temperature=0.0).acomplete(translation_prompt)
+            except Exception:
+                resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
             obj = resp.raw  # pydantic object
             translated_text = (obj.translated_query or query).strip()
             refined_text = (
@@ -362,4 +393,26 @@ class KeyframeQueryService:
         except Exception:
             pass
 
+        # Store in cache for deterministic repetition
+        self._refine_cache[query] = (refined_text, objects)
         return refined_text, objects
+
+    def get_embeddings_for_candidates(self, candidates: list[Any]) -> list[list[float]]:
+        """Return embeddings for given candidate keyframes from last vector search.
+
+        Raises if any embedding is missing to keep rerank strict and explicit.
+        """
+        if not self._last_embedding_map:
+            raise ValueError("No embeddings captured from last vector search")
+        embs: list[list[float]] = []
+        missing: list[int] = []
+        for cand in candidates:
+            key = getattr(cand, 'key', None)
+            e = self._last_embedding_map.get(key)
+            if e is None:
+                missing.append(key)
+            else:
+                embs.append(e)
+        if missing:
+            raise ValueError(f"Missing embeddings for candidate ids: {missing[:5]} ...")
+        return embs

@@ -18,14 +18,14 @@ class RerankOptions:
     # Sub-switches (SuperGlobal only)
     use_sg: bool = True
 
-    # SuperGlobal parameters
-    sg_top_m: int = 400
-    sg_qexp_k: int = 10
-    sg_img_knn: int = 10
+    # SuperGlobal parameters (tuned defaults for stability)
+    sg_top_m: int = 200
+    sg_qexp_k: int = 5
+    sg_img_knn: int = 4
     # New parameters per SuperGlobal
-    sg_alpha: float = 0.5
-    sg_beta: float = 1.8
-    sg_p_query: float = 100.0  # GeM power for query-side (~max)
+    sg_alpha: float = 0.85
+    sg_beta: float = 2.0
+    sg_p_query: float = 80.0  # GeM power for query-side (~max but less sharp)
     # Backward-compat for legacy name
     sg_gem_p: float = 3.0
     w_sg: float = 1.0
@@ -134,13 +134,13 @@ class RerankOptions:
 
             use_sg=get_value("enable_superglobal", True, bool),
 
-            sg_top_m=get_value("sg_top_m", 400, int),
-            sg_qexp_k=get_value("sg_qexp_k", 10, int),
-            sg_img_knn=get_value("sg_img_knn", 10, int),
-            sg_alpha=get_value("sg_alpha", 0.5, float),
-            sg_beta=get_value("sg_beta", 1.8, float),
+            sg_top_m=get_value("sg_top_m", 200, int),
+            sg_qexp_k=get_value("sg_qexp_k", 5, int),
+            sg_img_knn=get_value("sg_img_knn", 4, int),
+            sg_alpha=get_value("sg_alpha", 0.85, float),
+            sg_beta=get_value("sg_beta", 2.0, float),
             # Prefer sg_p_query, fall back to legacy sg_gem_p
-            sg_p_query=get_value("sg_p_query", None, float) if get_value("sg_p_query", None, float) is not None else get_value("sg_gem_p", 100.0, float),
+            sg_p_query=get_value("sg_p_query", None, float) if get_value("sg_p_query", None, float) is not None else get_value("sg_gem_p", 80.0, float),
             sg_gem_p=get_value("sg_gem_p", 3.0, float),
             w_sg=get_value("w_sg", 1.0, float),
 

@@ -45,14 +45,14 @@ class RerankSettings(BaseSettings):
 
     # SuperGlobal parameters
     RERANK_SG_TOP_M: int = Field(
-        default=400, description="SuperGlobal top-M candidates")
-    RERANK_SG_QEXP_K: int = Field(default=10, description="Query expansion K")
+        default=200, description="SuperGlobal top-M candidates")
+    RERANK_SG_QEXP_K: int = Field(default=5, description="Query expansion K")
     RERANK_SG_IMG_KNN: int = Field(
-        default=10, description="Image KNN parameter")
-    # New SuperGlobal params
-    RERANK_SG_ALPHA: float = Field(default=0.5, description="Blend alpha for SG scoring")
-    RERANK_SG_BETA: float = Field(default=1.8, description="Weight exponent for neighbor agg")
-    RERANK_SG_P_QUERY: float = Field(default=100.0, description="GeM p for query-side pooling")
+        default=4, description="Image KNN parameter")
+    # New SuperGlobal params (tuned defaults)
+    RERANK_SG_ALPHA: float = Field(default=0.85, description="Blend alpha for SG scoring")
+    RERANK_SG_BETA: float = Field(default=2.0, description="Weight exponent for neighbor agg")
+    RERANK_SG_P_QUERY: float = Field(default=80.0, description="GeM p for query-side pooling")
     # Legacy parameter retained for compatibility
     RERANK_SG_GEM_P: float = Field(
         default=3.0, description="Legacy GeM parameter (compat)")
