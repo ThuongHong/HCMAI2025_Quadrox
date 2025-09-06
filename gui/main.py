@@ -172,6 +172,27 @@ def get_pts_time_from_n(video_id, n):
         return None
 
 
+def apply_video_id_mapping(video_id):
+    """Apply video ID mapping rule: L01-L20 -> K01-K20"""
+    try:
+        # Extract group and video parts: L21_V001 -> ('L', '21', 'V001')
+        match = re.match(r'([LK])(\d+)(_V\d+)', video_id)
+        if match:
+            prefix, group_num, video_part = match.groups()
+            group_number = int(group_num)
+            
+            # Apply mapping rule: L01-L20 -> K01-K20
+            if prefix == 'L' and 1 <= group_number <= 20:
+                mapped_video_id = f"K{group_number:02d}{video_part}"
+                return mapped_video_id
+            
+        # Return original if no mapping needed
+        return video_id
+    except Exception:
+        # Return original if any error
+        return video_id
+
+
 def append_to_csv(filename, result_data):
     """Append a single result to CSV file in format: video_id, frame_idx, [vqa_answer]"""
     try:
@@ -183,9 +204,13 @@ def append_to_csv(filename, result_data):
         if not filename.endswith('.csv'):
             filename += '.csv'
 
+        # Apply video ID mapping (L01-L20 -> K01-K20)
+        video_id = result_data.get('video_id', '')
+        mapped_video_id = apply_video_id_mapping(video_id)
+
         # Data row: video_id, real frame_idx, and optionally vqa_answer
         row_data = {
-            'video_id': result_data.get('video_id', ''),
+            'video_id': mapped_video_id,
             # Use real_frame_idx if available
             'frame_idx': result_data.get('real_frame_idx', result_data.get('frame_idx', '')),
         }
@@ -231,8 +256,11 @@ def export_all_results_to_csv(filename, results_list):
                 # Get real frame_idx from CSV mapping
                 real_frame_idx = get_real_frame_idx_from_n(video_id, n)
                 if real_frame_idx is not None:
+                    # Apply video ID mapping (L01-L20 -> K01-K20)
+                    mapped_video_id = apply_video_id_mapping(video_id)
+                    
                     row_data = {
-                        'video_id': video_id,  # Use parsed video_id from path
+                        'video_id': mapped_video_id,  # Use mapped video_id
                         'frame_idx': real_frame_idx,  # Use real frame_idx from mapping
                     }
                     all_data.append(row_data)

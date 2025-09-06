@@ -74,6 +74,26 @@ def load_keyframe_mapping(video_full_id):
     
     return None
 
+def apply_video_id_mapping(video_id):
+    """Apply video ID mapping rule: L01-L20 -> K01-K20"""
+    try:
+        # Extract group and video parts: L21_V001 -> ('L', '21', 'V001')
+        match = re.match(r'([LK])(\d+)(_V\d+)', video_id)
+        if match:
+            prefix, group_num, video_part = match.groups()
+            group_number = int(group_num)
+            
+            # Apply mapping rule: L01-L20 -> K01-K20
+            if prefix == 'L' and 1 <= group_number <= 20:
+                mapped_video_id = f"K{group_number:02d}{video_part}"
+                return mapped_video_id
+            
+        # Return original if no mapping needed
+        return video_id
+    except Exception:
+        # Return original if any error
+        return video_id
+
 def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=None, append_mode=False, export_mode="KIS", qa_question="", num_scenes=3):
     """Export processed keyframes to CSV in submission format"""
     try:
@@ -91,8 +111,10 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
         if export_mode == "KIS":
             # Original KIS format: video_id, frame_idx
             for keyframe_info in processed_keyframes:
+                # Apply video ID mapping (L01-L20 -> K01-K20)
+                mapped_video_id = apply_video_id_mapping(keyframe_info['video_full_id'])
                 csv_data.append([
-                    keyframe_info['video_full_id'],
+                    mapped_video_id,
                     keyframe_info['real_frame_idx']
                 ])
             
@@ -102,8 +124,10 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
         elif export_mode == "QA":
             # QA format: video_id, frame_idx, answer (in quotes)
             for keyframe_info in processed_keyframes:
+                # Apply video ID mapping (L01-L20 -> K01-K20)
+                mapped_video_id = apply_video_id_mapping(keyframe_info['video_full_id'])
                 csv_data.append([
-                    keyframe_info['video_full_id'],
+                    mapped_video_id,
                     keyframe_info['real_frame_idx'],
                     qa_question  # Don't add quotes here, CSV will handle it
                 ])
@@ -116,10 +140,11 @@ def export_gallery_selection_to_csv(filename, processed_keyframes, mapping_df=No
             # Group keyframes by video
             video_groups = {}
             for keyframe_info in processed_keyframes:
-                video_id = keyframe_info['video_full_id']
-                if video_id not in video_groups:
-                    video_groups[video_id] = []
-                video_groups[video_id].append(keyframe_info['real_frame_idx'])
+                # Apply video ID mapping (L01-L20 -> K01-K20)
+                mapped_video_id = apply_video_id_mapping(keyframe_info['video_full_id'])
+                if mapped_video_id not in video_groups:
+                    video_groups[mapped_video_id] = []
+                video_groups[mapped_video_id].append(keyframe_info['real_frame_idx'])
             
             # Create rows with num_scenes columns
             for video_id, frame_list in video_groups.items():
