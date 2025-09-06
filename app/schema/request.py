@@ -77,6 +77,15 @@ class TextSearchWithSelectedGroupsAndVideosRequest(BaseSearchRequest):
     )
 
 
+class TextSearchWithVideoNamesRequest(BaseSearchRequest):
+    """Text search request with specific video names (e.g., L21_V026)"""
+    video_names: List[str] = Field(
+        default_factory=list,
+        description="List of video names to search within (e.g., ['L21_V026', 'L22_V110'])",
+        example=["L21_V026", "L22_V110"]
+    )
+
+
 class MetadataFilter(BaseModel):
     """Metadata filter criteria"""
     authors: Optional[List[str]] = Field(

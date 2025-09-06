@@ -9,6 +9,8 @@ import csv
 from pathlib import Path
 from datetime import datetime
 import re
+from PIL import Image
+from io import BytesIO
 
 # Page configuration
 st.set_page_config(
@@ -288,6 +290,63 @@ def load_available_objects():
         'categories': {},
         'metadata': {'source': 'fallback_coco_objects'}
     }
+
+
+def extract_video_names_from_results(results):
+    """Extract unique video names from search results for progressive filtering"""
+    video_names = set()
+    for result in results:
+        if 'path' in result:
+            # Extract video name from path like "D:/...keyframes/L21/L21_V026/230.jpg"
+            path_str = str(result['path']).replace('\\', '/')
+            
+            # Look for pattern like L##_V###
+            import re
+            pattern = r'L\d+_V\d+'
+            matches = re.findall(pattern, path_str)
+            
+            for match in matches:
+                video_names.add(match)
+                
+        # Also try to extract from video_id if available
+        elif 'video_id' in result:
+            video_id = result['video_id']
+            if isinstance(video_id, str) and '_V' in video_id:
+                video_names.add(video_id)
+    
+    return sorted(list(video_names))
+
+
+def extract_video_name_from_path(path):
+    """Extract video name from keyframe path"""
+    if not path:
+        return ""
+    
+    path_str = str(path).replace('\\', '/')
+    # Look for pattern like L##_V###
+    import re
+    pattern = r'L\d+_V\d+'
+    matches = re.findall(pattern, path_str)
+    
+    if matches:
+        return matches[0]
+    return ""
+
+
+def extract_frame_number_from_path(path):
+    """Extract frame number from keyframe path"""
+    if not path:
+        return 0
+    
+    path_str = str(path).replace('\\', '/')
+    # Extract filename without extension and convert to int
+    filename = os.path.basename(path_str)
+    name_without_ext = os.path.splitext(filename)[0]
+    
+    try:
+        return int(name_without_ext)
+    except (ValueError, TypeError):
+        return 0
 
 
 @st.cache_data
@@ -943,6 +1002,14 @@ if 'api_base_url' not in st.session_state:
 if 'csv_filename' not in st.session_state:
     st.session_state.csv_filename = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
+# Multi-stage workflow session state
+if 'multi_stage_workflow' not in st.session_state:
+    st.session_state.multi_stage_workflow = {
+        'active': False,
+        'stages': [],  # List of {query, results, video_names}
+        'current_stage': 1
+    }
+
 # Header
 st.markdown("""
 <div class="search-container">
@@ -1009,7 +1076,7 @@ with search_tab1:
         st.markdown("### 🎛️ Search Mode")
         search_mode = st.selectbox(
             "Mode",
-            options=["Default", "Exclude Groups", "Include Groups & Videos"],
+            options=["Default", "Exclude Groups", "Include Groups & Videos", "Video Scope", "Sequential Multi-stage"],
             help="Choose how to filter your search results"
         )
 
@@ -1072,6 +1139,183 @@ with search_tab1:
                     st.success(f"✅ Will include videos: {include_videos}")
             except ValueError:
                 st.error("Please enter valid video IDs separated by commas")
+
+    elif search_mode == "Video Scope":
+        st.markdown("### 🎯 Video Scope Selection")
+        st.markdown("**Perfect for progressive multi-stage queries!** Use results from previous search to narrow down the scope.")
+        
+        # Video scope input
+        video_scope_input = st.text_area(
+            "🎬 Video Names to Search Within",
+            placeholder="Enter video names, one per line or comma-separated:\nL21_V026\nL22_V110\nL23_V045\n\nOr: L21_V026, L22_V110, L23_V045",
+            help="Enter video names like L21_V026. You can copy these from 'Video Scope Extraction' section below after getting search results.",
+            height=100
+        )
+        
+        # Parse video scope
+        video_scope_list = []
+        if video_scope_input.strip():
+            # Split by both newlines and commas, then clean up
+            raw_videos = []
+            for line in video_scope_input.strip().split('\n'):
+                if ',' in line:
+                    raw_videos.extend([v.strip() for v in line.split(',')])
+                else:
+                    raw_videos.append(line.strip())
+            
+            # Filter and validate video names
+            for video in raw_videos:
+                video = video.strip()
+                if video and (video.startswith('L') and '_V' in video):
+                    video_scope_list.append(video)
+            
+            if video_scope_list:
+                st.success(f"✅ Will search within {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}")
+                if len(video_scope_list) > 5:
+                    with st.expander(f"Show all {len(video_scope_list)} videos"):
+                        st.write(video_scope_list)
+            else:
+                st.warning("⚠️ No valid video names found. Use format like: L21_V026")
+    
+    elif search_mode == "Sequential Multi-stage":
+        st.markdown("### 🎭 Sequential Multi-stage Search")
+        st.markdown("**Perfect for complex queries like:** *'a red hat white shirt man is going to his house, then the dog jump into his hand'*")
+        
+        # Handle direct multi-stage search execution
+        if hasattr(st.session_state, 'execute_multi_stage_search') and st.session_state.execute_multi_stage_search:
+            st.session_state.execute_multi_stage_search = False  # Reset flag
+            
+            # Get the query and execute search
+            if hasattr(st.session_state, 'current_multi_stage_query'):
+                search_query = st.session_state.current_multi_stage_query
+                workflow = st.session_state.multi_stage_workflow
+                
+                with st.spinner(f"🔍 Searching Stage {workflow['current_stage']}..."):
+                    try:
+                        # Use text search parameters (set defaults if not available)
+                        current_top_k = top_k if 'top_k' in locals() else 50
+                        current_threshold = score_threshold if 'score_threshold' in locals() else 0.3
+                        
+                        # Determine endpoint and payload based on stage
+                        if workflow['stages']:
+                            # Not the first stage - use video scope from previous stage
+                            prev_stage = workflow['stages'][-1]
+                            video_scope_for_stage = prev_stage['video_names']
+                            st.info(f"🎯 Stage {workflow['current_stage']} searching in {len(video_scope_for_stage)} unique videos from Stage {len(workflow['stages'])}")
+                            st.write(f"**Debug - Video scope for stage:** {video_scope_for_stage}")
+                            
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/video-names"
+                            payload = {
+                                "query": search_query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "video_names": video_scope_for_stage
+                            }
+                        else:
+                            # First stage - search all videos
+                            st.info(f"🚀 Stage 1 searching all videos")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": search_query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        
+                        # Execute search
+                        response = requests.post(
+                            endpoint,
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        
+                        if response.status_code == 200:
+                            results = response.json()
+                            st.session_state.search_results = results
+                            st.session_state.search_query = search_query
+                            
+                            # Extract unique video names from results
+                            video_names = extract_video_names_from_results(results)
+                            
+                            # Debug: Show extracted video names
+                            st.write(f"**Debug - Extracted video names:** {video_names}")
+                            
+                            # Add this stage to workflow
+                            new_stage = {
+                                'query': search_query,
+                                'results': results,
+                                'video_names': video_names,
+                                'stage_number': workflow['current_stage']
+                            }
+                            workflow['stages'].append(new_stage)
+                            workflow['current_stage'] += 1
+                            
+                            st.session_state.multi_stage_workflow = workflow
+                            st.success(f"✅ Stage {new_stage['stage_number']} completed! Found {len(results)} results from {len(video_names)} unique videos.")
+                            
+                            if len(video_names) > 0:
+                                st.info(f"🎯 Next stage will search within these {len(video_names)} videos: {', '.join(video_names[:5])}{'...' if len(video_names) > 5 else ''}")
+                            else:
+                                st.warning("⚠️ No results found in this stage. Workflow will end here.")
+                            
+                            st.rerun()
+                        else:
+                            st.error(f"Search failed: {response.status_code} - {response.text}")
+                            
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Connection error: {str(e)}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
+        
+        # Show current workflow state
+        workflow = st.session_state.multi_stage_workflow
+        
+        if not workflow['active']:
+            st.info("📝 Start a new sequential search workflow. Each stage will automatically use the unique videos from the previous stage.")
+            if st.button("🚀 Start New Sequential Workflow"):
+                st.session_state.multi_stage_workflow = {
+                    'active': True,
+                    'stages': [],
+                    'current_stage': 1
+                }
+                st.rerun()
+        else:
+            st.success(f"🔄 Active Sequential Workflow - Stage {workflow['current_stage']}")
+            
+            # Show previous stages
+            if workflow['stages']:
+                with st.expander(f"📚 Previous Stages ({len(workflow['stages'])} completed)", expanded=False):
+                    for i, stage in enumerate(workflow['stages'], 1):
+                        st.markdown(f"**Stage {i}:** {stage['query']}")
+                        st.markdown(f"  - Found {len(stage['results'])} results from {len(stage['video_names'])} unique videos")
+            
+            # Current stage input
+            current_stage_query = st.text_input(
+                f"🎯 Stage {workflow['current_stage']} Query", 
+                placeholder="Enter your query for this stage...",
+                help="This stage will only search within the unique videos from the previous stage" if workflow['stages'] else "This is the first stage - will search all videos"
+            )
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                if st.button(f"🔍 Search Stage {workflow['current_stage']}", disabled=not current_stage_query.strip()):
+                    # Set current query for search
+                    st.session_state.current_multi_stage_query = current_stage_query.strip()
+                    st.session_state.execute_multi_stage_search = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("📋 View All Results", disabled=not workflow['stages']):
+                    st.session_state.show_multi_stage_results = True
+                    st.rerun()
+            
+            with col3:
+                if st.button("🔄 Reset Workflow"):
+                    st.session_state.multi_stage_workflow = {
+                        'active': False,
+                        'stages': [],
+                        'current_stage': 1
+                    }
+                    st.rerun()
 
 # IMAGE SEARCH TAB
 with search_tab2:
@@ -1799,6 +2043,8 @@ with col_search1:
                                 filter_parts.append(
                                     f"videos: {include_videos}")
                             st.info(f"✅ Including {', '.join(filter_parts)}")
+                    elif search_mode == "Video Scope" and 'video_scope_list' in locals() and video_scope_list:
+                        st.info(f"🎯 Searching in {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}{'...' if len(video_scope_list) > 5 else ''}")
 
                     # Determine endpoint and base payload based on search mode
                     if search_mode == "Default":
@@ -1828,7 +2074,7 @@ with col_search1:
                                 "exclude_groups": exclude_groups
                             }
 
-                    else:  # Include Groups & Videos
+                    elif search_mode == "Include Groups & Videos":
                         if not include_groups and not include_videos:
                             st.warning(
                                 "⚠️ No groups or videos to include specified. Using default search.")
@@ -1847,6 +2093,67 @@ with col_search1:
                                 "include_groups": include_groups,
                                 "include_videos": include_videos
                             }
+
+                    elif search_mode == "Video Scope":
+                        if 'video_scope_list' not in locals() or not video_scope_list:
+                            st.warning("⚠️ No video names specified. Using default search.")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        else:
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/video-names"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "video_names": video_scope_list
+                            }
+                    
+                    elif search_mode == "Sequential Multi-stage":
+                        # Handle sequential multi-stage search
+                        workflow = st.session_state.multi_stage_workflow
+                        
+                        if not workflow['active']:
+                            st.error("⚠️ Sequential workflow is not active. Please start a new workflow.")
+                            st.stop()
+                        
+                        # Determine the query and scope based on current workflow state
+                        if hasattr(st.session_state, 'execute_multi_stage_search') and st.session_state.execute_multi_stage_search:
+                            # This is triggered by the stage search button
+                            current_query = st.session_state.current_multi_stage_query
+                            st.session_state.execute_multi_stage_search = False
+                        else:
+                            # Use the main query input
+                            current_query = query
+                        
+                        if workflow['stages']:
+                            # Not the first stage - use video scope from previous stage
+                            prev_stage = workflow['stages'][-1]
+                            video_scope_for_stage = prev_stage['video_names']
+                            st.info(f"🎯 Stage {workflow['current_stage']} searching in {len(video_scope_for_stage)} unique videos from Stage {len(workflow['stages'])}")
+                            
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/video-names"
+                            payload = {
+                                "query": current_query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "video_names": video_scope_for_stage
+                            }
+                        else:
+                            # First stage - search all videos
+                            st.info(f"🚀 Stage 1 searching all videos")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": current_query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        
+                        # Override query for the search
+                        query = current_query
 
                     # Add rerank parameters if enabled
                     params = None
@@ -1949,6 +2256,32 @@ with col_search1:
                         st.session_state.search_query = query
                         # Store rerank settings for later use in metadata display
                         st.session_state.last_search_rerank_enabled = enable_rerank
+                        
+                        # Handle Sequential Multi-stage workflow updates
+                        if search_mode == "Sequential Multi-stage":
+                            workflow = st.session_state.multi_stage_workflow
+                            if workflow['active']:
+                                # Extract unique video names from results
+                                video_names = extract_video_names_from_results(results)
+                                
+                                # Add this stage to workflow
+                                new_stage = {
+                                    'query': query,
+                                    'results': results,
+                                    'video_names': video_names,
+                                    'stage_number': workflow['current_stage']
+                                }
+                                workflow['stages'].append(new_stage)
+                                workflow['current_stage'] += 1
+                                
+                                st.session_state.multi_stage_workflow = workflow
+                                st.success(f"✅ Stage {new_stage['stage_number']} completed! Found {len(results)} results from {len(video_names)} unique videos.")
+                                
+                                if len(video_names) > 0:
+                                    st.info(f"🎯 Next stage will search within these {len(video_names)} videos: {', '.join(video_names[:5])}{'...' if len(video_names) > 5 else ''}")
+                                else:
+                                    st.warning("⚠️ No results found in this stage. Workflow will end here.")
+                        
                         st.rerun()
                     else:
                         st.error(
@@ -2001,6 +2334,52 @@ with col_search2:
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
 
+# Handle multi-stage results display
+if hasattr(st.session_state, 'show_multi_stage_results') and st.session_state.show_multi_stage_results:
+    st.session_state.show_multi_stage_results = False  # Reset flag
+    
+    workflow = st.session_state.multi_stage_workflow
+    if workflow['active'] and workflow['stages']:
+        st.markdown("---")
+        st.markdown("## 🎭 Sequential Multi-stage Results")
+        
+        # Display all stages side by side
+        for i, stage in enumerate(workflow['stages'], 1):
+            with st.expander(f"🎯 Stage {i}: {stage['query']}", expanded=True):
+                st.markdown(f"**Query:** {stage['query']}")
+                st.markdown(f"**Results:** {len(stage['results'])} keyframes from {len(stage['video_names'])} unique videos")
+                st.markdown(f"**Unique Videos:** {', '.join(stage['video_names'][:10])}")
+                if len(stage['video_names']) > 10:
+                    st.markdown(f"... and {len(stage['video_names'])-10} more videos")
+                
+                # Display first few results as thumbnails
+                if stage['results']:
+                    cols = st.columns(min(5, len(stage['results'])))
+                    for j, result in enumerate(stage['results'][:5]):
+                        with cols[j]:
+                            # Extract image info
+                            keyframe_path = result.get('keyframe_path', '')
+                            video_name = extract_video_name_from_path(keyframe_path)
+                            frame_number = extract_frame_number_from_path(keyframe_path)
+                            
+                            # Construct image URL
+                            image_url = f"{st.session_state.api_base_url}/static/keyframes/{video_name}/{frame_number:06d}.jpg"
+                            
+                            try:
+                                response = requests.get(image_url, timeout=5)
+                                if response.status_code == 200:
+                                    image = Image.open(BytesIO(response.content))
+                                    st.image(image, caption=f"{video_name}\nFrame {frame_number}", use_column_width=True)
+                                else:
+                                    st.error(f"Image not found: {response.status_code}")
+                            except Exception as e:
+                                st.error(f"Error loading image: {str(e)}")
+                    
+                    if len(stage['results']) > 5:
+                        st.markdown(f"... and {len(stage['results'])-5} more results")
+        
+        st.markdown("---")
+
 # Display results
 if st.session_state.search_results:
     st.markdown("---")
@@ -2016,6 +2395,34 @@ if st.session_state.search_results:
         results_list = results_data['results']
     else:
         results_list = results_data
+
+    # Video Scope Extraction for Multi-Stage Queries
+    if results_list:
+        with st.expander("🎯 Video Scope Extraction", expanded=False):
+            st.markdown("### Extract Video Names for Next Stage Query")
+            st.markdown("Copy the video names below to use in Video Scope mode for the next search stage:")
+            
+            # Extract unique video names from results
+            extracted_videos = extract_video_names_from_results(results_list)
+            
+            if extracted_videos:
+                # Display as comma-separated list for easy copying
+                video_names_text = ", ".join(extracted_videos)
+                st.text_area(
+                    f"📁 {len(extracted_videos)} unique videos found:",
+                    value=video_names_text,
+                    height=100,
+                    help="Copy this text and paste it into the Video Scope mode for your next search stage"
+                )
+                
+                # Also show as a formatted list
+                st.markdown("**Video List:**")
+                cols = st.columns(3)
+                for i, video_name in enumerate(extracted_videos):
+                    with cols[i % 3]:
+                        st.code(video_name, language=None)
+            else:
+                st.warning("No video names could be extracted from the results.")
 
     # CSV Export Configuration (before results)
     with st.expander("💾 CSV Export Settings", expanded=False):

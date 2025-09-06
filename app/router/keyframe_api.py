@@ -10,6 +10,7 @@ from schema.request import (
     TextSearchRequest,
     TextSearchWithExcludeGroupsRequest,
     TextSearchWithSelectedGroupsAndVideosRequest,
+    TextSearchWithVideoNamesRequest,
     TextSearchWithMetadataFilterRequest,
     ImageSearchRequest,
 )
@@ -233,6 +234,79 @@ async def search_keyframes_selected_groups_videos(
     )
 
     logger.info(f"Found {len(results)} results within selected groups/videos")
+
+    display_results = [
+        SingleKeyframeDisplay(**controller.convert_model_to_display(result))
+        for result in results
+    ]
+    return KeyframeDisplay(results=display_results)
+
+
+@router.post(
+    "/search/video-names",
+    response_model=KeyframeDisplay,
+    summary="Text search within specific videos by name",
+    description="""
+    Perform text-based search for keyframes within specific videos identified by their names.
+    
+    This endpoint allows you to search only within specified videos using their string identifiers
+    (e.g., "L21_V026", "L22_V110"). This is perfect for progressive filtering in multi-stage workflows.
+    
+    **Parameters:**
+    - **query**: The search text
+    - **top_k**: Maximum number of results to return  
+    - **score_threshold**: Minimum confidence score
+    - **video_names**: List of video names to search within (e.g., ["L21_V026", "L22_V110"])
+    
+    **Use Cases:**
+    - **Progressive Search**: Use results from Stage 1 to narrow Stage 2 search
+    - **Sequential Filtering**: "red hat man" → extract videos → "going home" → extract videos → "dog jumping"
+    - **Multi-Scene Queries**: Complex scenarios with multiple sequential actions
+    - **Result Refinement**: Narrow down search scope based on previous findings
+    
+    **Workflow Example:**
+    1. Stage 1: Search "red hat man" → Get 100 results → Extract unique video names
+    2. Stage 2: Search "going to house" within those videos → Get 30 results → Extract video names  
+    3. Stage 3: Search "dog jumping" within Stage 2 videos → Get 10 refined results
+    
+    **Example:**
+    ```json
+    {
+        "query": "dog jumping on man's hand",
+        "top_k": 10,
+        "score_threshold": 0.6,
+        "video_names": ["L21_V026", "L22_V110", "L23_V045"]
+    }
+    ```
+    """,
+    response_description="List of matching keyframes from specified videos"
+)
+async def search_keyframes_by_video_names(
+    request: TextSearchWithVideoNamesRequest,
+    controller: QueryController = Depends(get_query_controller)
+):
+    """
+    Search for keyframes within specific videos by their names.
+    """
+
+    logger.info(
+        f"Text search with video names: query='{request.query}', video_names={request.video_names}")
+
+    # Extract rerank parameters from request
+    rerank_params = {}
+    for field, value in request.dict().items():
+        if field.startswith(('rerank', 'rr_', 'sg_', 'w_', 'final_top_k')) and value is not None:
+            rerank_params[field] = value
+
+    results = await controller.search_with_video_names(
+        query=request.query,
+        top_k=request.top_k,
+        score_threshold=request.score_threshold,
+        video_names=request.video_names,
+        rerank_params=rerank_params if rerank_params else None
+    )
+
+    logger.info(f"Found {len(results)} results within specified videos")
 
     display_results = [
         SingleKeyframeDisplay(**controller.convert_model_to_display(result))
