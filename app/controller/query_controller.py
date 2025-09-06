@@ -323,6 +323,45 @@ class QueryController:
 
         return result[:top_k]
 
+    async def search_with_video_names(
+        self,
+        query: str,
+        top_k: int,
+        score_threshold: float,
+        video_names: list[str],
+        rerank_params: Optional[Dict[str, Any]] = None
+    ):
+        """Search within specific videos by their names (e.g., L21_V026)."""
+        # Convert video names to video IDs
+        video_ids = []
+        for video_name in video_names:
+            try:
+                # Parse video name format like "L21_V026" to extract video numbers
+                if video_name.startswith('L') and '_V' in video_name:
+                    parts = video_name.split('_V')
+                    if len(parts) == 2:
+                        video_num = int(parts[1])  # Extract video number (e.g., 026 -> 26)
+                        video_ids.append(video_num)
+                else:
+                    # Try to parse as just a number
+                    video_ids.append(int(video_name))
+            except (ValueError, IndexError):
+                # Skip invalid video names
+                continue
+        
+        if not video_ids:
+            return []  # No valid video IDs found
+        
+        # Use existing method with the converted video IDs
+        return await self.search_with_selected_video_group(
+            query=query,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            list_of_include_groups=[],  # Empty groups list
+            list_of_include_videos=video_ids,
+            rerank_params=rerank_params
+        )
+
     async def search_text_with_metadata_filter(
         self,
         query: str,

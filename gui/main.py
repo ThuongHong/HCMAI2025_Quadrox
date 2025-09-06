@@ -9,6 +9,8 @@ import csv
 from pathlib import Path
 from datetime import datetime
 import re
+from PIL import Image
+from io import BytesIO
 
 # Page configuration
 st.set_page_config(
@@ -288,6 +290,63 @@ def load_available_objects():
         'categories': {},
         'metadata': {'source': 'fallback_coco_objects'}
     }
+
+
+def extract_video_names_from_results(results):
+    """Extract unique video names from search results for progressive filtering"""
+    video_names = set()
+    for result in results:
+        if 'path' in result:
+            # Extract video name from path like "D:/...keyframes/L21/L21_V026/230.jpg"
+            path_str = str(result['path']).replace('\\', '/')
+            
+            # Look for pattern like L##_V###
+            import re
+            pattern = r'L\d+_V\d+'
+            matches = re.findall(pattern, path_str)
+            
+            for match in matches:
+                video_names.add(match)
+                
+        # Also try to extract from video_id if available
+        elif 'video_id' in result:
+            video_id = result['video_id']
+            if isinstance(video_id, str) and '_V' in video_id:
+                video_names.add(video_id)
+    
+    return sorted(list(video_names))
+
+
+def extract_video_name_from_path(path):
+    """Extract video name from keyframe path"""
+    if not path:
+        return ""
+    
+    path_str = str(path).replace('\\', '/')
+    # Look for pattern like L##_V###
+    import re
+    pattern = r'L\d+_V\d+'
+    matches = re.findall(pattern, path_str)
+    
+    if matches:
+        return matches[0]
+    return ""
+
+
+def extract_frame_number_from_path(path):
+    """Extract frame number from keyframe path"""
+    if not path:
+        return 0
+    
+    path_str = str(path).replace('\\', '/')
+    # Extract filename without extension and convert to int
+    filename = os.path.basename(path_str)
+    name_without_ext = os.path.splitext(filename)[0]
+    
+    try:
+        return int(name_without_ext)
+    except (ValueError, TypeError):
+        return 0
 
 
 @st.cache_data
@@ -1009,7 +1068,7 @@ with search_tab1:
         st.markdown("### 🎛️ Search Mode")
         search_mode = st.selectbox(
             "Mode",
-            options=["Default", "Exclude Groups", "Include Groups & Videos"],
+            options=["Default", "Exclude Groups", "Include Groups & Videos", "Include Video"],
             help="Choose how to filter your search results"
         )
 
@@ -1072,6 +1131,43 @@ with search_tab1:
                     st.success(f"✅ Will include videos: {include_videos}")
             except ValueError:
                 st.error("Please enter valid video IDs separated by commas")
+
+    elif search_mode == "Video Scope":
+        st.markdown("### 🎯 Video Scope Selection")
+        st.markdown("**Perfect for progressive multi-stage queries!** Use results from previous search to narrow down the scope.")
+        
+        # Video scope input
+        video_scope_input = st.text_area(
+            "🎬 Video Names to Search Within",
+            placeholder="Enter video names, one per line or comma-separated:\nL21_V026\nL22_V110\nL23_V045\n\nOr: L21_V026, L22_V110, L23_V045",
+            help="Enter video names like L21_V026. You can copy these from 'Video Scope Extraction' section below after getting search results.",
+            height=100
+        )
+        
+        # Parse video scope
+        video_scope_list = []
+        if video_scope_input.strip():
+            # Split by both newlines and commas, then clean up
+            raw_videos = []
+            for line in video_scope_input.strip().split('\n'):
+                if ',' in line:
+                    raw_videos.extend([v.strip() for v in line.split(',')])
+                else:
+                    raw_videos.append(line.strip())
+            
+            # Filter and validate video names
+            for video in raw_videos:
+                video = video.strip()
+                if video and (video.startswith('L') and '_V' in video):
+                    video_scope_list.append(video)
+            
+            if video_scope_list:
+                st.success(f"✅ Will search within {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}")
+                if len(video_scope_list) > 5:
+                    with st.expander(f"Show all {len(video_scope_list)} videos"):
+                        st.write(video_scope_list)
+            else:
+                st.warning("⚠️ No valid video names found. Use format like: L21_V026")
 
 # IMAGE SEARCH TAB
 with search_tab2:
@@ -1799,6 +1895,8 @@ with col_search1:
                                 filter_parts.append(
                                     f"videos: {include_videos}")
                             st.info(f"✅ Including {', '.join(filter_parts)}")
+                    elif search_mode == "Video Scope" and 'video_scope_list' in locals() and video_scope_list:
+                        st.info(f"🎯 Searching in {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}{'...' if len(video_scope_list) > 5 else ''}")
 
                     # Determine endpoint and base payload based on search mode
                     if search_mode == "Default":
@@ -1828,7 +1926,7 @@ with col_search1:
                                 "exclude_groups": exclude_groups
                             }
 
-                    else:  # Include Groups & Videos
+                    elif search_mode == "Include Groups & Videos":
                         if not include_groups and not include_videos:
                             st.warning(
                                 "⚠️ No groups or videos to include specified. Using default search.")
@@ -1846,6 +1944,24 @@ with col_search1:
                                 "score_threshold": current_threshold,
                                 "include_groups": include_groups,
                                 "include_videos": include_videos
+                            }
+
+                    elif search_mode == "Video Scope":
+                        if 'video_scope_list' not in locals() or not video_scope_list:
+                            st.warning("⚠️ No video names specified. Using default search.")
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold
+                            }
+                        else:
+                            endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/video-names"
+                            payload = {
+                                "query": query,
+                                "top_k": current_top_k,
+                                "score_threshold": current_threshold,
+                                "video_names": video_scope_list
                             }
 
                     # Add rerank parameters if enabled
@@ -2016,6 +2132,34 @@ if st.session_state.search_results:
         results_list = results_data['results']
     else:
         results_list = results_data
+
+    # Video Scope Extraction for Multi-Stage Queries
+    if results_list:
+        with st.expander("🎯 Video Scope Extraction", expanded=False):
+            st.markdown("### Extract Video Names for Next Stage Query")
+            st.markdown("Copy the video names below to use in Video Scope mode for the next search stage:")
+            
+            # Extract unique video names from results
+            extracted_videos = extract_video_names_from_results(results_list)
+            
+            if extracted_videos:
+                # Display as comma-separated list for easy copying
+                video_names_text = ", ".join(extracted_videos)
+                st.text_area(
+                    f"📁 {len(extracted_videos)} unique videos found:",
+                    value=video_names_text,
+                    height=100,
+                    help="Copy this text and paste it into the Video Scope mode for your next search stage"
+                )
+                
+                # Also show as a formatted list
+                st.markdown("**Video List:**")
+                cols = st.columns(3)
+                for i, video_name in enumerate(extracted_videos):
+                    with cols[i % 3]:
+                        st.code(video_name, language=None)
+            else:
+                st.warning("No video names could be extracted from the results.")
 
     # CSV Export Configuration (before results)
     with st.expander("💾 CSV Export Settings", expanded=False):
