@@ -1068,7 +1068,7 @@ with search_tab1:
         st.markdown("### 🎛️ Search Mode")
         search_mode = st.selectbox(
             "Mode",
-            options=["Default", "Exclude Groups", "Include Groups & Videos", "Video Scope"],
+            options=["Default", "Exclude Groups", "Include Groups & Videos", "Include Video"],
             help="Choose how to filter your search results"
         )
 
