@@ -1132,8 +1132,8 @@ with search_tab1:
             except ValueError:
                 st.error("Please enter valid video IDs separated by commas")
 
-    elif search_mode == "Video Scope":
-        st.markdown("### 🎯 Video Scope Selection")
+    elif search_mode == "Include Video":
+        st.markdown("### 🎯 Include Video Selection")
         st.markdown("**Perfect for progressive multi-stage queries!** Use results from previous search to narrow down the scope.")
         
         # Video scope input
@@ -1895,7 +1895,7 @@ with col_search1:
                                 filter_parts.append(
                                     f"videos: {include_videos}")
                             st.info(f"✅ Including {', '.join(filter_parts)}")
-                    elif search_mode == "Video Scope" and 'video_scope_list' in locals() and video_scope_list:
+                    elif search_mode == "Include Video" and 'video_scope_list' in locals() and video_scope_list:
                         st.info(f"🎯 Searching in {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}{'...' if len(video_scope_list) > 5 else ''}")
 
                     # Determine endpoint and base payload based on search mode
@@ -1946,7 +1946,7 @@ with col_search1:
                                 "include_videos": include_videos
                             }
 
-                    elif search_mode == "Video Scope":
+                    elif search_mode == "Include Video":
                         if 'video_scope_list' not in locals() or not video_scope_list:
                             st.warning("⚠️ No video names specified. Using default search.")
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
@@ -2137,7 +2137,7 @@ if st.session_state.search_results:
     if results_list:
         with st.expander("🎯 Video Scope Extraction", expanded=False):
             st.markdown("### Extract Video Names for Next Stage Query")
-            st.markdown("Copy the video names below to use in Video Scope mode for the next search stage:")
+            st.markdown("Copy the video names below to use in Include Video mode for the next search stage:")
             
             # Extract unique video names from results
             extracted_videos = extract_video_names_from_results(results_list)
@@ -2149,7 +2149,7 @@ if st.session_state.search_results:
                     f"📁 {len(extracted_videos)} unique videos found:",
                     value=video_names_text,
                     height=100,
-                    help="Copy this text and paste it into the Video Scope mode for your next search stage"
+                    help="Copy this text and paste it into the Include Video mode for your next search stage"
                 )
                 
                 # Also show as a formatted list
