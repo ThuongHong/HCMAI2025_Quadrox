@@ -2010,10 +2010,54 @@ with col_search1:
                         # Add individual rerank methods
                         if rerank_superglobal_enabled:
                             params["rr_superglobal"] = 1
-                            params["sg_top_t"] = sg_top_t
+                            params["sg_top_m"] = sg_top_t
                         else:
                             params["rr_superglobal"] = 0
 
+                        # Attach filters so backend can filter then rerank
+                        filter_info = []
+
+                        # Search mode filters
+                        if search_mode == "Exclude Groups" and exclude_groups:
+                            params["exclude_groups"] = ",".join(str(x) for x in exclude_groups)
+                            filter_info.append(f"exclude groups: {exclude_groups}")
+                        elif search_mode == "Include Groups & Videos":
+                            if include_groups:
+                                params["include_groups"] = ",".join(str(x) for x in include_groups)
+                                filter_info.append(f"include groups: {include_groups}")
+                            if include_videos:
+                                params["include_videos"] = ",".join(str(x) for x in include_videos)
+                                filter_info.append(f"include videos: {include_videos}")
+                        elif search_mode == "Include Video" and 'video_scope_list' in locals() and video_scope_list:
+                            # Convert video names like 'L21_V026' to integers for include_videos
+                            try:
+                                video_ids = []
+                                for vn in video_scope_list:
+                                    if isinstance(vn, str) and "_V" in vn:
+                                        part = vn.split("_V", 1)[1]
+                                        video_ids.append(int(part))
+                                if video_ids:
+                                    params["include_videos"] = ",".join(str(x) for x in video_ids)
+                                    filter_info.append(f"include videos: {video_ids}")
+                            except Exception:
+                                pass
+
+                        # Metadata/Object filters
+                        if use_metadata_filter and metadata_filter:
+                            try:
+                                params["metadata_filter"] = json.dumps(metadata_filter)
+                                filter_info.append(f"metadata: {list(metadata_filter.keys())}")
+                            except Exception:
+                                pass
+                        if use_object_filter and object_filter:
+                            try:
+                                params["object_filter"] = json.dumps(object_filter)
+                                objects_str = ", ".join(object_filter.get("objects", [])[:3])
+                                if len(object_filter.get("objects", [])) > 3:
+                                    objects_str += f" (+{len(object_filter['objects'])-3} more)"
+                                filter_info.append(f"objects[{object_filter.get('mode','any')}]: {objects_str}")
+                            except Exception:
+                                pass
 
                         # Show rerank info
                         rerank_methods = []
@@ -2025,9 +2069,9 @@ with col_search1:
                             f"⚡ Reranking enabled: {' + '.join(rerank_methods)} → {params['top_k']} results")
 
                         # For rerank, we don't use metadata/object filters (advanced endpoint doesn't support them)
-                        if (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
-                            st.warning(
-                                "⚠️ Metadata and object filters are not supported with reranking. Using rerank only.")
+                        # if False and ((use_metadata_filter and metadata_filter) or (use_object_filter and object_filter)):
+                        #     st.warning(
+                        #         "⚠️ Metadata and object filters are not supported with reranking. Using rerank only.")
 
                     # If not using reranking but have metadata/object filters, use metadata-filter endpoint
                     elif (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
