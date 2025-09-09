@@ -2408,9 +2408,11 @@ if st.session_state.search_results:
                         f"<strong>🎬 Frame:</strong> <em>Unable to parse</em>")
 
                 # NEW: Show pts_time information
+                pts_minutes = int(pts_time // 60) if pts_time is not None else None
+                pts_seconds = int(pts_time % 60) if pts_time is not None else None
                 if pts_time is not None:
                     metadata_parts.append(
-                        f"<strong>⏱️ PTS Time:</strong> {pts_time:.1f}s")
+                        f"<strong>⏱️ PTS Time:</strong> {pts_minutes}:{pts_seconds:02d} ({pts_time:.1f}s)")
                 else:
                     metadata_parts.append(
                         f"<strong>⏱️ PTS Time:</strong> <em>Not available</em>")
@@ -2474,10 +2476,10 @@ if st.session_state.search_results:
 
                 # Format path for display - show only relative part from keyframes/
                 display_path = result['path']
-                if 'keyframes\\' in display_path:
-                    display_path = display_path.split('keyframes\\')[-1]
-                elif 'keyframes/' in display_path:
-                    display_path = display_path.split('keyframes/')[-1]
+                # if 'keyframes\\' in display_path:
+                #     display_path = display_path.split('keyframes\\')[-1]
+                # elif 'keyframes/' in display_path:
+                #     display_path = display_path.split('keyframes/')[-1]
 
                 # Create the result card HTML
                 result_html = f"""
