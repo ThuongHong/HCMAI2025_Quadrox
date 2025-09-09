@@ -1901,8 +1901,8 @@ if use_object_filter and 'selected_objects' in locals() and selected_objects:
 
 # Toggle for new engine (QExp)
 enable_qexp = st.checkbox(
-    "**🚀 Enable Query Expansion**", value=False,
-    help="QExp: Use multi-variant fusion and object-aware boost"
+    "**🚀 Enable Advanced Query Enhancement**", value=False,
+    help="Use multi-variant fusion and object-aware boost"
 )
 
 # Search button and logic
