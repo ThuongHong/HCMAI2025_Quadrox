@@ -21,10 +21,26 @@ class VisualEventExtractor:
             
 
     async def extract_visual_events(self, query: str) -> AgentResponse:
+        import json
         prompt = self.extraction_prompt.format(query=query, coco=COCO_CLASS)
-        response = await self.llm.as_structured_llm(AgentResponse).acomplete(prompt)
-        obj = cast(AgentResponse, response.raw)
-        return obj
+        try:
+            resp = await self.llm.achat(prompt)
+            txt = resp.message.content if hasattr(resp, "message") else str(resp)
+            # Try strict parse first
+            try:
+                data = json.loads(txt)
+            except Exception:
+                # Fallback: extract JSON object substring
+                start = txt.find("{")
+                end = txt.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    data = json.loads(txt[start:end+1])
+                else:
+                    raise
+            return AgentResponse(**data)
+        except Exception:
+            # Safe fallback
+            return AgentResponse(refined_query=query, list_of_objects=[], query_variants=[])
     
 
     @staticmethod

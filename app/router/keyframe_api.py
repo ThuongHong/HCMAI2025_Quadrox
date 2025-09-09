@@ -75,7 +75,7 @@ async def search_keyframes(
     for field, value in request.dict().items():
         if value is None:
             continue
-        if field.startswith(('rerank', 'rr_', 'sg_')):
+        if field.startswith(('rerank', 'rr_', 'sg_', 'qexp_')):
             rerank_params[field] = value
         elif field in ('w_sg', 'final_top_k'):
             rerank_params[field] = value
@@ -295,7 +295,7 @@ async def search_keyframes_by_video_names(
     # Extract rerank parameters from request
     rerank_params = {}
     for field, value in request.dict().items():
-        if field.startswith(('rerank', 'rr_', 'sg_', 'w_', 'final_top_k')) and value is not None:
+        if field.startswith(('rerank', 'rr_', 'sg_', 'w_', 'final_top_k', 'qexp_')) and value is not None:
             rerank_params[field] = value
 
     results = await controller.search_with_video_names(
@@ -392,7 +392,7 @@ async def search_keyframes_with_metadata_filter(
     # Extract rerank parameters from request
     rerank_params = {}
     for field, value in request.dict().items():
-        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k', 'qexp_')) and value is not None:
             rerank_params[field] = value
 
     results = await controller.search_text_with_metadata_filter(

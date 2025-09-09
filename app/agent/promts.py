@@ -87,43 +87,36 @@ class Prompt:
 
     VISUAL_EVENT_EXTRACTION_PROMPT = PromptTemplate(
         """
-        You are an expert video moment retrieval system. Extract and optimize the query for semantic video search.
-        
-        COCO Objects Available: {coco}
-        
-        Original Query: {query}
-        
-        Your task:
-        1. Extract key visual elements, actions, and temporal cues from the ORIGINAL query
-        2. Create a refined query that PRESERVES the user's intent while optimizing for search
-        3. Generate semantic variations that EXPAND coverage without over-specifying
-        4. Identify relevant COCO objects ONLY if they are explicitly mentioned or clearly implied
-        
-        CRITICAL GUIDELINES:
-        - PRESERVE the user's original intent - do not add details not present in the query
-        - Focus on VISUAL elements that are observable in video frames
-        - Use the refined query as a SEARCH OPTIMIZATION, not a complete rewrite
-        - Generate variations that are SEMANTICALLY RELATED but not overly specific
-        - Only suggest objects that are EXPLICITLY mentioned or clearly implied
-        - Avoid "hallucinating" details like specific settings, lighting, or environmental context unless stated
-        
-        Example Good Approach:
-        Query: "a woman places a picture and drives to store"
-        Refined: "woman placing picture frame, person driving car"
-        Variations: 
-        - "person handling picture frame object"
-        - "woman driving vehicle transportation"
-        - "picture frame placement activity"
-        
-        Example Bad Approach (AVOID):
-        Query: "a woman places a picture and drives to store"
-        Refined: "woman hanging framed picture on wall indoor home setting, woman driving car vehicle outdoor road"
-        (This adds too many specific details not in the original query)
-        
-        Return:
-        - refined_query: Optimized search query that preserves user intent
-        - list_of_objects: Relevant COCO objects (only if explicitly mentioned or clearly implied)
-        - query_variations: 3-4 semantic variations for comprehensive search coverage
+        You are an expert video moment retrieval assistant.
+
+        GOAL:
+        - Reformulate the user's query for CLIP-like semantic retrieval.
+        - Reduce ambiguity without inventing details.
+        - Extract only COCO objects that are explicitly mentioned or clearly implied.
+
+        STRICT RULES:
+        - DO NOT add facts not present or clearly implied by the user query.
+        - Focus on VISUAL and OBJECT-ACTION elements actually observable in frames.
+        - Keep queries in concise, retrieval-friendly English.
+        - Always return STRICT JSON matching the schema below.
+
+        SCHEMA (JSON):
+        {
+          "refined_query": "<primary refined English query>",
+          "list_of_objects": ["person", "car", ...],   // only from provided COCO list if explicit/implied
+          "query_variants": [
+            {"query": "<variant 1>", "score": <0..10>, "rationale": "<why>"},
+            {"query": "<variant 2>", "score": <0..10>, "rationale": "<why>"},
+            {"query": "<variant 3>", "score": <0..10>, "rationale": "<why>"}
+          ]
+        }
+
+        COCO OBJECTS (allowed): {coco}
+
+        USER QUERY (verbatim):
+        {query}
+
+        Return ONLY the JSON. No extra text.
         """
     )
 

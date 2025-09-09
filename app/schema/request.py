@@ -147,3 +147,11 @@ class TextSearchWithMetadataFilterRequest(BaseSearchRequest):
     object_filter: Optional[ObjectFilter] = Field(
         None, description="Object detection filter criteria"
     )
+
+
+# Optional per-request overrides for Query Expansion
+class QueryParams(BaseModel):
+    qexp_enable: Optional[bool] = None
+    qexp_top_variants: Optional[int] = None
+    qexp_fusion: Optional[str] = None         # "max" | "rrf"
+    qexp_use_objects: Optional[bool] = None   # auto-apply object filter if possible
