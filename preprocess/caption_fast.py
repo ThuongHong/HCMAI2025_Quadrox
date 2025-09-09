@@ -87,6 +87,10 @@ def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbna
 
 def load_image(image_file, input_size=448, max_num=12):
     image = Image.open(image_file).convert('RGB')
+    # Crop 110px from bottom
+    width, height = image.size
+    if height > 110:
+        image = image.crop((0, 0, width, height - 110))
     transform = build_transform(input_size=input_size)
     images = dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
     pixel_values = [transform(image) for image in images]
@@ -224,10 +228,14 @@ def main():
     keyframes_dirs = list(base_dir.glob('**/keyframes'))
     if not keyframes_dirs:
         # Fallback: look for images directly in resource folder
-        image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp']
+        image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.JPG', '*.JPEG', '*.PNG', '*.BMP']
         for ext in image_extensions:
             for image_path in base_dir.rglob(ext):
+                # Try to determine video name from folder structure
                 video_name = image_path.parent.name
+                # If parent is 'keyframes', use grandparent as video name
+                if video_name.lower() == 'keyframes':
+                    video_name = image_path.parent.parent.name
                 all_images_to_process.append((image_path, video_name))
     else:
         # Process keyframes directories
