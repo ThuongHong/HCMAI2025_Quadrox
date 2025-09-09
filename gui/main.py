@@ -180,12 +180,12 @@ def apply_video_id_mapping(video_id):
         if match:
             prefix, group_num, video_part = match.groups()
             group_number = int(group_num)
-            
+
             # Apply mapping rule: L01-L20 -> K01-K20
             if prefix == 'L' and 1 <= group_number <= 20:
                 mapped_video_id = f"K{group_number:02d}{video_part}"
                 return mapped_video_id
-            
+
         # Return original if no mapping needed
         return video_id
     except Exception:
@@ -258,7 +258,7 @@ def export_all_results_to_csv(filename, results_list):
                 if real_frame_idx is not None:
                     # Apply video ID mapping (L01-L20 -> K01-K20)
                     mapped_video_id = apply_video_id_mapping(video_id)
-                    
+
                     row_data = {
                         'video_id': mapped_video_id,  # Use mapped video_id
                         'frame_idx': real_frame_idx,  # Use real frame_idx from mapping
@@ -327,21 +327,21 @@ def extract_video_names_from_results(results):
         if 'path' in result:
             # Extract video name from path like "D:/...keyframes/L21/L21_V026/230.jpg"
             path_str = str(result['path']).replace('\\', '/')
-            
+
             # Look for pattern like L##_V###
             import re
             pattern = r'L\d+_V\d+'
             matches = re.findall(pattern, path_str)
-            
+
             for match in matches:
                 video_names.add(match)
-                
+
         # Also try to extract from video_id if available
         elif 'video_id' in result:
             video_id = result['video_id']
             if isinstance(video_id, str) and '_V' in video_id:
                 video_names.add(video_id)
-    
+
     return sorted(list(video_names))
 
 
@@ -349,13 +349,13 @@ def extract_video_name_from_path(path):
     """Extract video name from keyframe path"""
     if not path:
         return ""
-    
+
     path_str = str(path).replace('\\', '/')
     # Look for pattern like L##_V###
     import re
     pattern = r'L\d+_V\d+'
     matches = re.findall(pattern, path_str)
-    
+
     if matches:
         return matches[0]
     return ""
@@ -365,12 +365,12 @@ def extract_frame_number_from_path(path):
     """Extract frame number from keyframe path"""
     if not path:
         return 0
-    
+
     path_str = str(path).replace('\\', '/')
     # Extract filename without extension and convert to int
     filename = os.path.basename(path_str)
     name_without_ext = os.path.splitext(filename)[0]
-    
+
     try:
         return int(name_without_ext)
     except (ValueError, TypeError):
@@ -405,7 +405,6 @@ def load_available_keywords():
         st.warning(f"Could not load keywords from metadata files: {e}")
 
     return sorted(list(keywords_set))  # Return sorted list
-
 
 
 # Functions
@@ -1086,7 +1085,7 @@ with search_tab1:
         col_param1, col_param2 = st.columns(2)
         with col_param1:
             top_k = st.slider("📊 Max Results", min_value=1,
-                              max_value=200, value=10, key="text_top_k")
+                              max_value=200, value=200, key="text_top_k")
         with col_param2:
             score_threshold = st.slider(
                 "🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1, key="text_threshold")
@@ -1096,7 +1095,8 @@ with search_tab1:
         st.markdown("### 🎛️ Search Mode")
         search_mode = st.selectbox(
             "Mode",
-            options=["Default", "Exclude Groups", "Include Groups & Videos", "Include Video"],
+            options=["Default", "Exclude Groups",
+                     "Include Groups & Videos", "Include Video"],
             help="Choose how to filter your search results"
         )
 
@@ -1162,8 +1162,9 @@ with search_tab1:
 
     elif search_mode == "Include Video":
         st.markdown("### 🎯 Include Video Selection")
-        st.markdown("**Perfect for progressive multi-stage queries!** Use results from previous search to narrow down the scope.")
-        
+        st.markdown(
+            "**Perfect for progressive multi-stage queries!** Use results from previous search to narrow down the scope.")
+
         # Video scope input
         video_scope_input = st.text_area(
             "🎬 Video Names to Search Within",
@@ -1171,7 +1172,7 @@ with search_tab1:
             help="Enter video names like L21_V026. You can copy these from 'Video Scope Extraction' section below after getting search results.",
             height=100
         )
-        
+
         # Parse video scope
         video_scope_list = []
         if video_scope_input.strip():
@@ -1182,20 +1183,22 @@ with search_tab1:
                     raw_videos.extend([v.strip() for v in line.split(',')])
                 else:
                     raw_videos.append(line.strip())
-            
+
             # Filter and validate video names
             for video in raw_videos:
                 video = video.strip()
                 if video and (video.startswith('L') and '_V' in video):
                     video_scope_list.append(video)
-            
+
             if video_scope_list:
-                st.success(f"✅ Will search within {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}")
+                st.success(
+                    f"✅ Will search within {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}")
                 if len(video_scope_list) > 5:
                     with st.expander(f"Show all {len(video_scope_list)} videos"):
                         st.write(video_scope_list)
             else:
-                st.warning("⚠️ No valid video names found. Use format like: L21_V026")
+                st.warning(
+                    "⚠️ No valid video names found. Use format like: L21_V026")
 
 # IMAGE SEARCH TAB
 with search_tab2:
@@ -1235,155 +1238,156 @@ with search_tab2:
 # Metadata Filter Section (Independent)
 st.markdown("---")
 st.markdown("### 🏷️ Metadata Filters")
-st.markdown("Apply additional filters based on video metadata")
 
 # Load available keywords once at the top
 available_keywords = load_available_keywords()
 
 with st.expander("🔍 Metadata Filters", expanded=False):
-    col_meta1, col_meta2 = st.columns(2)
+    st.markdown("**✅ Enable Metadata Filtering**")
 
-    with col_meta1:
-        # Author filter
-        st.markdown("**👥 Authors**")
-        authors_input = st.text_input(
-            "Filter by authors",
-            placeholder="e.g., 60 Giây (matches '60 Giây Official')",
-            help="Enter partial author names separated by commas - uses contains matching",
-            key="authors_filter"
-        )
+    # Enable/disable metadata filtering
+    use_metadata_filter = st.checkbox(
+        "Apply metadata filters to search results",
+        value=False,
+        help="When enabled, search results will be filtered by the metadata criteria below"
+    )
 
-        # Keywords filter
-        st.markdown("**🏷️ Keywords**")
+    if use_metadata_filter:
+        col_meta1, col_meta2 = st.columns(2)
 
-        # Keywords selection method
-        keywords_method = st.radio(
-            "Select keywords method:",
-            ["🔍 Search & Select", "📝 Manual Input"],
-            horizontal=True,
-            key="keywords_method"
-        )
-
-        selected_keywords = []
-        if keywords_method == "🔍 Search & Select" and available_keywords:
-            # Search keywords
-            keyword_search = st.text_input(
-                "🔍 Search keywords:",
-                placeholder="Type to filter available keywords",
-                key="keyword_search"
+        with col_meta1:
+            # Author filter
+            st.markdown("**👥 Authors**")
+            authors_input = st.text_input(
+                "Filter by authors",
+                placeholder="e.g., 60 Giây (matches '60 Giây Official')",
+                help="Enter partial author names separated by commas - uses contains matching",
+                key="authors_filter"
             )
 
-            # Filter keywords based on search
-            if keyword_search:
-                filtered_keywords = [
-                    k for k in available_keywords if keyword_search.lower() in k.lower()]
-                # Limit to 20 for performance
-                display_keywords = filtered_keywords[:20]
+            # Keywords filter
+            st.markdown("**🏷️ Keywords**")
+
+            # Keywords selection method
+            keywords_method = st.radio(
+                "Select keywords method:",
+                ["🔍 Search & Select", "📝 Manual Input"],
+                horizontal=True,
+                key="keywords_method"
+            )
+
+            selected_keywords = []
+            if keywords_method == "🔍 Search & Select" and available_keywords:
+                # Search keywords
+                keyword_search = st.text_input(
+                    "🔍 Search keywords:",
+                    placeholder="Type to filter available keywords",
+                    key="keyword_search"
+                )
+
+                # Filter keywords based on search
+                if keyword_search:
+                    filtered_keywords = [
+                        k for k in available_keywords if keyword_search.lower() in k.lower()]
+                    # Limit to 20 for performance
+                    display_keywords = filtered_keywords[:20]
+                else:
+                    display_keywords = available_keywords  # Show all by default
+
+                selected_keywords = st.multiselect(
+                    "Select keywords:",
+                    options=display_keywords,
+                    help="Choose from detected keywords in metadata",
+                    key="keywords_multiselect"
+                )
+
             else:
-                display_keywords = available_keywords  # Show all by default
+                # Manual input fallback
+                keywords_input = st.text_input(
+                    "Manual keyword input",
+                    placeholder="e.g., tin tuc, HTV, 60 giay",
+                    help="Enter keywords separated by commas",
+                    key="keywords_manual"
+                )
+                if keywords_input.strip():
+                    selected_keywords = [
+                        k.strip() for k in keywords_input.split(',') if k.strip()]
 
-            selected_keywords = st.multiselect(
-                "Select keywords:",
-                options=display_keywords,
-                help="Choose from detected keywords in metadata",
-                key="keywords_multiselect"
+            # Keywords mode
+            if selected_keywords:
+                keywords_mode = st.radio(
+                    "Keywords matching mode:",
+                    ["any", "all"],
+                    help="'any': match videos with at least one keyword, 'all': match videos with all keywords",
+                    key="keywords_mode",
+                    horizontal=True
+                )
+
+            # Length filter
+            st.markdown("**⏱️ Video Length (seconds)**")
+            col_len1, col_len2 = st.columns(2)
+            with col_len1:
+                min_length = st.number_input(
+                    "Min length", min_value=0, value=0, step=1, key="min_len")
+            with col_len2:
+                max_length = st.number_input(
+                    "Max length", min_value=0, value=0, step=1, key="max_len")
+
+        with col_meta2:
+            # Title/Description filter
+            st.markdown("**🔍 Text Search in Metadata**")
+
+            # Title filter with mode
+            title_contains = st.text_input(
+                "Title contains",
+                placeholder="e.g., 60 Giây, tin tức",
+                help="Enter search terms separated by commas for multiple term search",
+                key="title_filter"
             )
 
-        else:
-            # Manual input fallback
-            keywords_input = st.text_input(
-                "Manual keyword input",
-                placeholder="e.g., tin tuc, HTV, 60 giay",
-                help="Enter keywords separated by commas",
-                key="keywords_manual"
-            )
-            if keywords_input.strip():
-                selected_keywords = [
-                    k.strip() for k in keywords_input.split(',') if k.strip()]
-
-        # Keywords mode
-        if selected_keywords:
-            keywords_mode = st.radio(
-                "Keywords matching mode:",
+            # Always show title mode
+            title_mode = st.radio(
+                "Title matching mode:",
                 ["any", "all"],
-                help="'any': match videos with at least one keyword, 'all': match videos with all keywords",
-                key="keywords_mode",
+                help="'any': match titles with at least one term, 'all': match titles with all terms",
+                key="title_mode",
                 horizontal=True
             )
 
-        # Length filter
-        st.markdown("**⏱️ Video Length (seconds)**")
-        col_len1, col_len2 = st.columns(2)
-        with col_len1:
-            min_length = st.number_input(
-                "Min length", min_value=0, value=0, step=1, key="min_len")
-        with col_len2:
-            max_length = st.number_input(
-                "Max length", min_value=0, value=0, step=1, key="max_len")
-
-    with col_meta2:
-        # Title/Description filter
-        st.markdown("**🔍 Text Search in Metadata**")
-
-        # Title filter with mode
-        title_contains = st.text_input(
-            "Title contains",
-            placeholder="e.g., 60 Giây, tin tức",
-            help="Enter search terms separated by commas for multiple term search",
-            key="title_filter"
-        )
-
-        # Always show title mode
-        title_mode = st.radio(
-            "Title matching mode:",
-            ["any", "all"],
-            help="'any': match titles with at least one term, 'all': match titles with all terms",
-            key="title_mode",
-            horizontal=True
-        )
-
-        # Description filter with mode
-        description_contains = st.text_input(
-            "Description contains",
-            placeholder="Search in descriptions",
-            help="Enter search terms separated by commas for multiple term search",
-            key="desc_filter"
-        )
-
-        # Always show description mode
-        description_mode = st.radio(
-            "Description matching mode:",
-            ["any", "all"],
-            help="'any': match descriptions with at least one term, 'all': match descriptions with all terms",
-            key="description_mode",
-            horizontal=True
-        )
-
-        # Date filter
-        st.markdown("**📅 Publication Date**")
-        col_date1, col_date2 = st.columns(2)
-        with col_date1:
-            date_from = st.date_input(
-                "From date",
-                value=None,
-                help="Filter videos published from this date",
-                key="date_from"
-            )
-        with col_date2:
-            date_to = st.date_input(
-                "To date",
-                value=None,
-                help="Filter videos published until this date",
-                key="date_to"
+            # Description filter with mode
+            description_contains = st.text_input(
+                "Description contains",
+                placeholder="Search in descriptions",
+                help="Enter search terms separated by commas for multiple term search",
+                key="desc_filter"
             )
 
-        # Enable/disable metadata filtering
-        st.markdown("**✅ Enable Metadata Filtering**")
-        use_metadata_filter = st.checkbox(
-            "Apply metadata filters to search results",
-            value=False,
-            help="When enabled, search results will be filtered by the metadata criteria above"
-        )
+            # Always show description mode
+            description_mode = st.radio(
+                "Description matching mode:",
+                ["any", "all"],
+                help="'any': match descriptions with at least one term, 'all': match descriptions with all terms",
+                key="description_mode",
+                horizontal=True
+            )
+
+            # Date filter
+            st.markdown("**📅 Publication Date**")
+            col_date1, col_date2 = st.columns(2)
+            with col_date1:
+                date_from = st.date_input(
+                    "From date",
+                    value=None,
+                    help="Filter videos published from this date",
+                    key="date_from"
+                )
+            with col_date2:
+                date_to = st.date_input(
+                    "To date",
+                    value=None,
+                    help="Filter videos published until this date",
+                    key="date_to"
+                )
 
 # Parse metadata filters
 metadata_filter = {}
@@ -1457,6 +1461,21 @@ if use_metadata_filter:
     if date_to is not None:
         # Convert date to DD/MM/YYYY format
         metadata_filter["date_to"] = date_to.strftime("%d/%m/%Y")
+else:
+    # Initialize default values when metadata filter is not enabled
+    use_metadata_filter = False
+    authors_input = ""
+    selected_keywords = []
+    keywords_method = "🔍 Search & Select"
+    keywords_mode = "any"
+    min_length = 0
+    max_length = 0
+    title_contains = ""
+    title_mode = "any"
+    description_contains = ""
+    description_mode = "any"
+    date_from = None
+    date_to = None
 
 # Rerank Options Section
 st.markdown("### ⚡ Rerank Options")
@@ -1498,10 +1517,9 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
                 )
                 sg_top_t = st.slider(
                     "SuperGlobal top_t",
-                    min_value=50, max_value=500, value=50, step=25,
+                    min_value=50, max_value=500, value=200, step=25,
                     help="Number of candidates for SuperGlobal reranking"
                 )
-
 
             st.markdown("**⚙️ Advanced Settings**")
             rerank_cache_enabled = st.checkbox(
@@ -1519,7 +1537,7 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
             st.markdown("**📊 Final Results**")
             rerank_final_top_k = st.slider(
                 "Final top_k results",
-                min_value=5, max_value=100, value=10, step=5,
+                min_value=5, max_value=100, value=100, step=5,
                 help="Final number of results after reranking"
             )
 
@@ -1538,7 +1556,6 @@ with st.expander("🎯 Multi-Stage Reranking", expanded=False):
 
 # Object Filter Section
 st.markdown("### 🎯 Object Filters")
-st.markdown("Filter keyframes by detected objects in the images")
 
 with st.expander("🔍 Object Detection Filters", expanded=False):
     # Enable/disable object filtering
@@ -1558,7 +1575,6 @@ with st.expander("🔍 Object Detection Filters", expanded=False):
             available_objects = objects_data['objects']
             object_categories = objects_data['categories']
             objects_metadata = objects_data['metadata']
-
 
             st.markdown("**🎯 Object Selection Method**")
 
@@ -1924,7 +1940,8 @@ with col_search1:
                                     f"videos: {include_videos}")
                             st.info(f"✅ Including {', '.join(filter_parts)}")
                     elif search_mode == "Include Video" and 'video_scope_list' in locals() and video_scope_list:
-                        st.info(f"🎯 Searching in {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}{'...' if len(video_scope_list) > 5 else ''}")
+                        st.info(
+                            f"🎯 Searching in {len(video_scope_list)} videos: {', '.join(video_scope_list[:5])}{'...' if len(video_scope_list) > 5 else ''}")
 
                     # Determine endpoint and base payload based on search mode
                     if search_mode == "Default":
@@ -1976,7 +1993,8 @@ with col_search1:
 
                     elif search_mode == "Include Video":
                         if 'video_scope_list' not in locals() or not video_scope_list:
-                            st.warning("⚠️ No video names specified. Using default search.")
+                            st.warning(
+                                "⚠️ No video names specified. Using default search.")
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search"
                             payload = {
                                 "query": query,
@@ -2019,15 +2037,21 @@ with col_search1:
 
                         # Search mode filters
                         if search_mode == "Exclude Groups" and exclude_groups:
-                            params["exclude_groups"] = ",".join(str(x) for x in exclude_groups)
-                            filter_info.append(f"exclude groups: {exclude_groups}")
+                            params["exclude_groups"] = ",".join(
+                                str(x) for x in exclude_groups)
+                            filter_info.append(
+                                f"exclude groups: {exclude_groups}")
                         elif search_mode == "Include Groups & Videos":
                             if include_groups:
-                                params["include_groups"] = ",".join(str(x) for x in include_groups)
-                                filter_info.append(f"include groups: {include_groups}")
+                                params["include_groups"] = ",".join(
+                                    str(x) for x in include_groups)
+                                filter_info.append(
+                                    f"include groups: {include_groups}")
                             if include_videos:
-                                params["include_videos"] = ",".join(str(x) for x in include_videos)
-                                filter_info.append(f"include videos: {include_videos}")
+                                params["include_videos"] = ",".join(
+                                    str(x) for x in include_videos)
+                                filter_info.append(
+                                    f"include videos: {include_videos}")
                         elif search_mode == "Include Video" and 'video_scope_list' in locals() and video_scope_list:
                             # Convert video names like 'L21_V026' to integers for include_videos
                             try:
@@ -2037,25 +2061,32 @@ with col_search1:
                                         part = vn.split("_V", 1)[1]
                                         video_ids.append(int(part))
                                 if video_ids:
-                                    params["include_videos"] = ",".join(str(x) for x in video_ids)
-                                    filter_info.append(f"include videos: {video_ids}")
+                                    params["include_videos"] = ",".join(
+                                        str(x) for x in video_ids)
+                                    filter_info.append(
+                                        f"include videos: {video_ids}")
                             except Exception:
                                 pass
 
                         # Metadata/Object filters
                         if use_metadata_filter and metadata_filter:
                             try:
-                                params["metadata_filter"] = json.dumps(metadata_filter)
-                                filter_info.append(f"metadata: {list(metadata_filter.keys())}")
+                                params["metadata_filter"] = json.dumps(
+                                    metadata_filter)
+                                filter_info.append(
+                                    f"metadata: {list(metadata_filter.keys())}")
                             except Exception:
                                 pass
                         if use_object_filter and object_filter:
                             try:
-                                params["object_filter"] = json.dumps(object_filter)
-                                objects_str = ", ".join(object_filter.get("objects", [])[:3])
+                                params["object_filter"] = json.dumps(
+                                    object_filter)
+                                objects_str = ", ".join(
+                                    object_filter.get("objects", [])[:3])
                                 if len(object_filter.get("objects", [])) > 3:
                                     objects_str += f" (+{len(object_filter['objects'])-3} more)"
-                                filter_info.append(f"objects[{object_filter.get('mode','any')}]: {objects_str}")
+                                filter_info.append(
+                                    f"objects[{object_filter.get('mode','any')}]: {objects_str}")
                             except Exception:
                                 pass
 
@@ -2209,11 +2240,12 @@ if st.session_state.search_results:
     if results_list:
         with st.expander("🎯 Video Scope Extraction", expanded=False):
             st.markdown("### Extract Video Names for Next Stage Query")
-            st.markdown("Copy the video names below to use in Include Video mode for the next search stage:")
-            
+            st.markdown(
+                "Copy the video names below to use in Include Video mode for the next search stage:")
+
             # Extract unique video names from results
             extracted_videos = extract_video_names_from_results(results_list)
-            
+
             if extracted_videos:
                 # Display as comma-separated list for easy copying
                 video_names_text = ", ".join(extracted_videos)
@@ -2223,7 +2255,7 @@ if st.session_state.search_results:
                     height=100,
                     help="Copy this text and paste it into the Include Video mode for your next search stage"
                 )
-                
+
                 # Also show as a formatted list
                 st.markdown("**Video List:**")
                 cols = st.columns(3)
@@ -2231,7 +2263,8 @@ if st.session_state.search_results:
                     with cols[i % 3]:
                         st.code(video_name, language=None)
             else:
-                st.warning("No video names could be extracted from the results.")
+                st.warning(
+                    "No video names could be extracted from the results.")
 
     # CSV Export Configuration (before results)
     with st.expander("💾 CSV Export Settings", expanded=False):
@@ -2408,8 +2441,10 @@ if st.session_state.search_results:
                         f"<strong>🎬 Frame:</strong> <em>Unable to parse</em>")
 
                 # NEW: Show pts_time information
-                pts_minutes = int(pts_time // 60) if pts_time is not None else None
-                pts_seconds = int(pts_time % 60) if pts_time is not None else None
+                pts_minutes = int(
+                    pts_time // 60) if pts_time is not None else None
+                pts_seconds = int(pts_time %
+                                  60) if pts_time is not None else None
                 if pts_time is not None:
                     metadata_parts.append(
                         f"<strong>⏱️ PTS Time:</strong> {pts_minutes}:{pts_seconds:02d} ({pts_time:.1f}s)")
