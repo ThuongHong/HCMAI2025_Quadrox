@@ -1901,8 +1901,8 @@ if use_object_filter and 'selected_objects' in locals() and selected_objects:
 
 # Toggle for new engine (QExp)
 enable_qexp = st.checkbox(
-    "**🚀 Enable Query Expansion (QExp)**", value=False,
-    help="Use multi-variant fusion and object-aware boost"
+    "**🚀 Enable Query Expansion**", value=False,
+    help="QExp: Use multi-variant fusion and object-aware boost"
 )
 
 # Search button and logic
@@ -2125,7 +2125,7 @@ with col_search1:
                     # Show Query Expansion status
                     if enable_qexp:
                         st.info(
-                            "🚀 Query Expansion (QExp) enabled: Multi-variant fusion and object-aware boost")
+                            "🚀 Query Expansion enabled: Multi-variant fusion and object-aware boost")
 
                     # If not using reranking but have metadata/object filters, use metadata-filter endpoint
                     elif (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):
