@@ -82,8 +82,29 @@ def get_agent_controller(
     model_service = service_factory.get_model_service()
 
     data_folder = app_settings.DATA_FOLDER
-    objects_data_path = Path(app_settings.FRAME2OBJECT)
-    asr_data_path = Path(app_settings.ASR_PATH)
+    # FRAME2OBJECT and ASR_PATH may be absent in AppSettings. Use getattr and validate.
+    _obj_path = getattr(app_settings, "FRAME2OBJECT", None)
+    _asr_path = getattr(app_settings, "ASR_PATH", None)
+    objects_data_path = None
+    asr_data_path = None
+    try:
+        if _obj_path:
+            p = Path(_obj_path)
+            if p.exists():
+                objects_data_path = p
+            else:
+                logger.warning(f"FRAME2OBJECT path does not exist: {p}")
+    except Exception as e:
+        logger.warning(f"Invalid FRAME2OBJECT setting: {e}")
+    try:
+        if _asr_path:
+            p = Path(_asr_path)
+            if p.exists():
+                asr_data_path = p
+            else:
+                logger.warning(f"ASR_PATH does not exist: {p}")
+    except Exception as e:
+        logger.warning(f"Invalid ASR_PATH setting: {e}")
 
     return AgentController(
         llm=llm,

@@ -413,32 +413,6 @@ async def search_keyframes_with_metadata_filter(
     return KeyframeDisplay(results=display_results)
 
 
-@router.post(
-    "/search/image",
-    response_model=KeyframeDisplay,
-    summary="Image-based search for keyframes",
-    description="""
-    Perform an image-based search for keyframes using visual similarity.
-    
-    This endpoint converts the uploaded image to an embedding and searches for 
-    the most visually similar keyframes in the database.
-    
-    **Parameters:**
-    - **file**: The image file to search with (JPEG, PNG, etc.)
-    - **top_k**: Maximum number of results to return (1-100, default: 10)
-    - **score_threshold**: Minimum confidence score (0.0-1.0, default: 0.0)
-    
-    **Returns:**
-    List of keyframes with their metadata and confidence scores, ordered by visual similarity.
-    
-    **Supported formats:**
-    - JPEG, PNG, BMP, TIFF, WebP
-    
-    **Example usage:**
-    Upload an image file and specify search parameters to find visually similar keyframes.
-    """,
-    response_description="List of matching keyframes with visual similarity scores"
-)
 @router.get(
     "/search/advanced",
     response_model=KeyframeDisplay,
@@ -636,6 +610,32 @@ async def search_keyframes_advanced(
     return KeyframeDisplay(results=display_results)
 
 
+@router.post(
+    "/search/image",
+    response_model=KeyframeDisplay,
+    summary="Image-based search for keyframes",
+    description="""
+    Perform an image-based search for keyframes using visual similarity.
+    
+    This endpoint converts the uploaded image to an embedding and searches for 
+    the most visually similar keyframes in the database.
+    
+    **Parameters:**
+    - **file**: The image file to search with (JPEG, PNG, etc.)
+    - **top_k**: Maximum number of results to return (1-100, default: 10)
+    - **score_threshold**: Minimum confidence score (0.0-1.0, default: 0.0)
+    
+    **Returns:**
+    List of keyframes with their metadata and confidence scores, ordered by visual similarity.
+    
+    **Supported formats:**
+    - JPEG, PNG, BMP, TIFF, WebP
+    
+    **Example usage:**
+    Upload an image file and specify search parameters to find visually similar keyframes.
+    """,
+    response_description="List of matching keyframes with visual similarity scores"
+)
 async def search_keyframes_by_image(
     file: UploadFile = File(...),
     top_k: int = Query(default=10, ge=1, le=500,
