@@ -144,7 +144,7 @@ async def search_keyframes_exclude_groups(
     for field, value in request.dict().items():
         if value is None:
             continue
-        if field.startswith(('rerank', 'rr_', 'sg_')):
+        if field.startswith(('rerank', 'rr_', 'sg_', 'qexp_')):
             rerank_params[field] = value
         elif field in ('w_sg', 'final_top_k'):
             rerank_params[field] = value
@@ -221,7 +221,7 @@ async def search_keyframes_selected_groups_videos(
     # Extract rerank parameters from request
     rerank_params = {}
     for field, value in request.dict().items():
-        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k')) and value is not None:
+        if field.startswith(('rerank', 'rr_', 'sg_', 'cap_', 'llm_', 'w_', 'final_top_k', 'qexp_')) and value is not None:
             rerank_params[field] = value
 
     results = await controller.search_with_selected_video_group(

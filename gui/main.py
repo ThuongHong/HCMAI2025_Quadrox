@@ -2027,6 +2027,8 @@ with col_search1:
                                 "score_threshold": current_threshold,
                                 "video_names": video_scope_list
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
 
                     # Add rerank parameters if enabled
                     params = None
@@ -2161,6 +2163,10 @@ with col_search1:
                                 objects_str += f" (+{len(object_filter['objects'])-3} more)"
                             filter_info.append(
                                 f"objects[{object_filter['mode']}]: {objects_str}")
+
+                        # Enable QExp per request in metadata-filter flow
+                        if enable_qexp:
+                            payload["qexp_enable"] = True
 
                         st.info(
                             f"🎯 Applying filters: {' | '.join(filter_info)}")
