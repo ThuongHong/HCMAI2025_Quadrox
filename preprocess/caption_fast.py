@@ -5,7 +5,7 @@ from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer
 import glob
-import csv
+import json
 from tqdm import tqdm
 from pathlib import Path
 import multiprocessing
@@ -279,31 +279,32 @@ def main():
         for future in tqdm(as_completed(futures), total=len(futures), desc="Overall Captioning Progress"):
             results_from_all_processes.extend(future.result())
 
-    # Reorganize results by video_name for CSV output
-    results_by_video = {}
-    for item in results_from_all_processes:
+    # Write individual JSON files for each keyframe
+    print("\nWriting individual JSON files for each keyframe...", flush=True)
+    
+    # Create output directory structure similar to resources
+    for item in tqdm(results_from_all_processes, desc="Writing JSON files"):
+        image_path = Path(item['image_path'])
         video_name = item['video_name']
-        if video_name not in results_by_video:
-            results_by_video[video_name] = []
-        results_by_video[video_name].append({'frame_name': Path(item['image_path']).name, 'caption': item['caption']})
+        frame_name = image_path.stem  # Get filename without extension
+        caption = item['caption']
+        
+        # Create video-specific output directory
+        video_output_dir = output_dir / video_name
+        video_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create JSON structure similar to the example
+        json_data = {
+            "caption": caption,
+        }
+        
+        # Save as individual JSON file
+        json_file = video_output_dir / f"{frame_name}.json"
+        with open(json_file, mode='w', encoding='utf-8') as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    # Write results to CSV files
-    print("\nWriting CSV files...", flush=True)
-    for video_name, captions_data in tqdm(results_by_video.items(), desc="Writing CSVs"):
-        csv_file = output_dir / f"{video_name}.csv"
-        with open(csv_file, mode='w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(['n', 'caption'])
-            # Sort by frame name numerically (assuming frame names like '1.jpg', '2.jpg')
-            try:
-                captions_data.sort(key=lambda x: int(Path(x['frame_name']).stem))
-            except ValueError:
-                # If numerical sorting fails, sort alphabetically
-                captions_data.sort(key=lambda x: x['frame_name'])
-            for data in captions_data:
-                writer.writerow([data['frame_name'], data['caption']])
-
-    print(f"Captioning complete! Results saved to {output_dir}")
+    print(f"Captioning complete! Individual JSON files saved to {output_dir}")
+    print(f"Total files processed: {len(results_from_all_processes)}")
     print("Performance optimizations enabled: Flash Attention, Torch Compile, Mixed Precision, Batch Processing")
 
 if __name__ == "__main__":
