@@ -308,6 +308,12 @@ class KeyframeQueryService:
             filtered_results, key=lambda r: r.distance, reverse=True
         )
 
+        # Build embedding map for rerank consumption
+        try:
+            self._last_embedding_map = {r.id_: r.embedding for r in sorted_results}
+        except Exception:
+            self._last_embedding_map = {}
+
         sorted_ids = [result.id_ for result in sorted_results]
 
         # Apply metadata and object filtering

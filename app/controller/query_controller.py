@@ -445,6 +445,7 @@ class QueryController:
                 reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
                     query=refined_query,
                     base_candidates=candidates,
+                    base_embeddings=base_embeddings,
                     query_embedding=embedding,
                     options=rerank_options
                 )
@@ -486,6 +487,7 @@ class QueryController:
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
+                base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
 
                 # For image search, use a generic query for reranking
                 generic_query = "visual content search"
@@ -498,14 +500,9 @@ class QueryController:
                     options=rerank_options
                 )
 
-                # Reconstruct result maintaining original scores
-                result = [(cand, score) for (cand, score), new_cand in
-                          zip(result, reranked_candidates) if cand == new_cand]
-
-                original_ids = {id(cand) for cand, _ in result}
-                for new_cand in reranked_candidates:
-                    if id(new_cand) not in original_ids:
-                        result.append((new_cand, 0.5))
+                # Reconstruct result strictly following reranked order
+                orig_map = {id(c): s for c, s in result}
+                result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
 
             except Exception as e:
                 import logging
