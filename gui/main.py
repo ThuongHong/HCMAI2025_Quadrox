@@ -2533,7 +2533,7 @@ if st.session_state.search_results:
                     metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'
 
                 # Format path for display - show only relative part from keyframes/
-                display_path = result['path']
+                display_path = result['path'].replace("/", "\\")
                 # if 'keyframes\\' in display_path:
                 #     display_path = display_path.split('keyframes\\')[-1]
                 # elif 'keyframes/' in display_path:
