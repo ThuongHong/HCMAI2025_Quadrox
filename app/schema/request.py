@@ -161,3 +161,23 @@ class QueryParams(BaseModel):
     qexp_top_variants: Optional[int] = None
     qexp_fusion: Optional[str] = None         # "max" | "rrf"
     qexp_use_objects: Optional[bool] = None   # auto-apply object filter if possible
+
+
+class TemporalEnrichRequest(BaseModel):
+    """Temporal enrichment request for a given pivot keyframe.
+
+    Provide either pivot_video_id (e.g., L01_V001) or (pivot_group_num, pivot_video_num).
+    Provide at least one of: pivot_n, or (pivot_frame_idx & pivot_pts_time), or pivot_pts_time with pivot_n.
+    """
+    mode: Literal["auto", "interactive"] = Field(..., description="Temporal mode")
+    # Identify video
+    pivot_video_id: Optional[str] = Field(None, description="Video ID like L01_V001")
+    pivot_group_num: Optional[int] = Field(None, description="Group number (e.g., 1 for L01)")
+    pivot_video_num: Optional[int] = Field(None, description="Video number (e.g., 1 for V001)")
+    # Pivot location
+    pivot_n: Optional[int] = Field(None, description="Keyframe order within video (n)")
+    pivot_frame_idx: Optional[int] = Field(None, description="Absolute video frame index")
+    pivot_pts_time: Optional[float] = Field(None, description="Presentation timestamp in seconds")
+    pivot_score: Optional[float] = Field(None, description="Similarity/confidence score of pivot (optional)")
+    # Interactive controls
+    delta: Optional[float] = Field(5.0, ge=1.0, le=30.0, description="Half window seconds for interactive mode")

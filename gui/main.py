@@ -2563,6 +2563,90 @@ if st.session_state.search_results:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+    # Temporal Search (beta)
+    if sorted_results:
+        with st.expander("⏱️ Temporal Search (beta)", expanded=False):
+            enable_temporal = st.checkbox("Enable Temporal Search", value=False)
+            if enable_temporal:
+                mode = st.radio("Mode", options=["Auto", "Interactive"], horizontal=True)
+
+                # Choose pivot result
+                pivot_idx = 0
+                if mode == "Interactive":
+                    pivot_idx = st.number_input(
+                        "Pivot result index (0-based)", min_value=0, max_value=len(sorted_results)-1, value=0, step=1
+                    )
+                pivot = sorted_results[pivot_idx]
+
+                # Extract video_id (e.g., L21_V026) and n from path
+                vid_from_path = extract_video_name_from_path(pivot.get('path', ''))
+                n_from_path = extract_frame_number_from_path(pivot.get('path', ''))
+                group_id = pivot.get('group_id')
+                video_num = pivot.get('video_id')  # numeric video id in this UI
+
+                # Build video_id robustly
+                if vid_from_path:
+                    pivot_video_id = vid_from_path
+                elif group_id is not None and video_num is not None:
+                    pivot_video_id = f"L{int(group_id):02d}_V{int(video_num):03d}"
+                else:
+                    pivot_video_id = ""
+
+                pivot_pts_time = pivot.get('pts_time')
+                pivot_n = n_from_path if n_from_path else pivot.get('frame_idx')
+
+                # Interactive delta
+                delta = 5.0
+                if mode == "Interactive":
+                    delta = float(st.slider("±Δ seconds", min_value=3.0, max_value=20.0, value=5.0, step=0.5))
+
+                # Call backend to get clusters
+                payload = {
+                    "mode": "auto" if mode == "Auto" else "interactive",
+                    "pivot_video_id": pivot_video_id,
+                    "pivot_n": int(pivot_n) if pivot_n is not None else None,
+                    "pivot_pts_time": float(pivot_pts_time) if pivot_pts_time is not None else None,
+                    "pivot_score": float(pivot.get('score', 0.0)) if pivot.get('score') is not None else None,
+                    "delta": delta,
+                }
+                try:
+                    api_base = st.session_state.get('api_base_url', 'http://localhost:8000')
+                    resp = requests.post(f"{api_base}/api/v1/keyframe/temporal/enrich", json=payload, timeout=20)
+                    if resp.status_code == 200:
+                        tview = resp.json()
+
+                        # Render clusters
+                        st.markdown(f"Pivot: `{pivot_video_id}`, n={pivot_n}, t={pivot_pts_time:.2f}s")
+                        # Try to infer keyframes root from pivot path
+                        sample_path = pivot.get('path', '')
+                        def build_img_path(video_id: str, n: int, sample_path: str) -> str:
+                            # Prefer replacing the tail Lxx/Lxx_Vyyy/000.jpg
+                            sp = sample_path.replace('\\', '/').split('/keyframes/')
+                            if len(sp) >= 2:
+                                root = sp[0] + '/keyframes'
+                                import re
+                                m = re.match(r"L(\d+)_V(\d+)", video_id)
+                                if m:
+                                    g = int(m.group(1)); v = int(m.group(2))
+                                    return f"{root}/L{g:02d}/L{g:02d}_V{v:03d}/{int(n):03d}.jpg"
+                            return sample_path  # fallback: show pivot only
+
+                        for c in tview.get('clusters', []):
+                            st.markdown(f"**{c['video_id']}** — {c['start_time']:.2f}s → {c['end_time']:.2f}s")
+                            thumbs = []
+                            cols = st.columns(min(6, max(1, len(c.get('keyframes', [])))))
+                            for idx, kf in enumerate(c.get('keyframes', [])):
+                                with cols[idx % len(cols)]:
+                                    p = build_img_path(c['video_id'], kf.get('n', 0), sample_path)
+                                    try:
+                                        st.image(p, caption=f"n={kf.get('n','?')} t={kf['pts_time']:.1f}s", use_container_width=True)
+                                    except Exception:
+                                        st.caption(f"n={kf.get('n','?')} t={kf['pts_time']:.1f}s")
+                    else:
+                        st.warning(f"Temporal enrich failed: {resp.status_code} {resp.text}")
+                except Exception as e:
+                    st.warning(f"Temporal enrich error: {e}")
+
 # Footer
 st.markdown("---")
 st.markdown("""

@@ -131,3 +131,23 @@ streamlit run main.py
 ## 📝 License
 
 This project is part of the HCMAI2025 competition.
+
+## Temporal Search (beta)
+
+We added opt-in Temporal Search to improve KIS/TRAKE metrics without changing existing behavior.
+
+- Auto mode: Expands a window ±5→20s around a pivot keyframe using Adaptive Bidirectional Temporal Search (ABTS) and clusters keyframes by time (default gap 10s).
+- Interactive mode: Pick a pivot result and choose ±Δ seconds to browse neighboring keyframes chronologically.
+
+Backend:
+- New endpoint `POST /keyframe/temporal/enrich`.
+- Request fields: `mode` (auto|interactive), `pivot_video_id` (e.g., L01_V001) or (`pivot_group_num`,`pivot_video_num`), and either `pivot_n` or (`pivot_frame_idx` & `pivot_pts_time`), optional `delta` for interactive.
+- Response includes `pivot`, time `window`, and `clusters` with representative keyframe per cluster.
+
+Frontend:
+- In Streamlit, open “Temporal Search (beta)” under results. Toggle on, choose mode, and preview clusters as horizontal strips. Thumbnails are limited to keyframes; no video decoding required.
+
+Implementation notes:
+- Uses `resources/map-keyframes/<video_id>.csv` with columns `n, pts_time, fps, frame_idx`.
+- Clustering groups by contiguous time with default 10s gap.
+- When similarity is unavailable per keyframe, temporal decay by distance to pivot provides stable expansion and ordering.

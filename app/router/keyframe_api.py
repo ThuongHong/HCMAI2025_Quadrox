@@ -13,11 +13,13 @@ from schema.request import (
     TextSearchWithVideoNamesRequest,
     TextSearchWithMetadataFilterRequest,
     ImageSearchRequest,
+    TemporalEnrichRequest,
 )
 from schema.response import KeyframeServiceReponse, SingleKeyframeDisplay, KeyframeDisplay
 from controller.query_controller import QueryController
 from core.dependencies import get_query_controller
 from core.logger import SimpleLogger
+from retrieval.temporal_search.service import temporal_enrich, video_id_from_nums
 
 
 logger = SimpleLogger(__name__)
@@ -608,6 +610,49 @@ async def search_keyframes_advanced(
         for result in results
     ]
     return KeyframeDisplay(results=display_results)
+
+
+@router.post(
+    "/temporal/enrich",
+    summary="Temporal enrichment around a pivot keyframe",
+    description="""
+    Compute temporal neighborhood and clusters around a pivot keyframe.
+
+    Provide either `pivot_video_id` (e.g. L01_V001) or (`pivot_group_num`, `pivot_video_num`).
+    Provide at least one of: `pivot_n`, or (`pivot_frame_idx` & `pivot_pts_time`).
+
+    Modes:
+    - auto: Expand window adaptively using edge confidence
+    - interactive: Use ±delta seconds around pivot_pts_time
+    """,
+)
+async def temporal_enrich_endpoint(request: TemporalEnrichRequest):
+    try:
+        # Resolve video_id
+        if request.pivot_video_id and isinstance(request.pivot_video_id, str):
+            video_id = request.pivot_video_id
+        elif request.pivot_group_num is not None and request.pivot_video_num is not None:
+            video_id = video_id_from_nums(int(request.pivot_group_num), int(request.pivot_video_num))
+        else:
+            raise HTTPException(status_code=400, detail="Missing video identifier: provide pivot_video_id or (pivot_group_num & pivot_video_num)")
+
+        out = temporal_enrich(
+            mode=request.mode,
+            video_id=video_id,
+            pivot_n=request.pivot_n,
+            pivot_frame_idx=request.pivot_frame_idx,
+            pivot_pts_time=request.pivot_pts_time,
+            pivot_score=request.pivot_score,
+            delta=request.delta or 5.0,
+            gap_seconds=10.0,
+        )
+        return JSONResponse(content=out)
+    except FileNotFoundError as e:
+        logger.warning(f"Temporal enrich skipped: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Temporal enrich failed: {e}")
+        raise HTTPException(status_code=500, detail="Temporal enrichment failed")
 
 
 @router.post(
