@@ -1899,6 +1899,12 @@ if use_object_filter and 'selected_objects' in locals() and selected_objects:
         "mode": object_filter_mode if 'object_filter_mode' in locals() else "any"
     }
 
+# Toggle for new engine (QExp)
+enable_qexp = st.checkbox(
+    "**🚀 Enable Query Expansion (QExp)**", value=False,
+    help="Use multi-variant fusion and object-aware boost"
+)
+
 # Search button and logic
 col_search1, col_search2 = st.columns(2)
 
@@ -1951,6 +1957,8 @@ with col_search1:
                             "top_k": current_top_k,
                             "score_threshold": current_threshold
                         }
+                        if enable_qexp:
+                            payload["qexp_enable"] = True
 
                     elif search_mode == "Exclude Groups":
                         if not exclude_groups:
@@ -1962,6 +1970,8 @@ with col_search1:
                                 "top_k": current_top_k,
                                 "score_threshold": current_threshold
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
                         else:
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/exclude-groups"
                             payload = {
@@ -1970,6 +1980,8 @@ with col_search1:
                                 "score_threshold": current_threshold,
                                 "exclude_groups": exclude_groups
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
 
                     elif search_mode == "Include Groups & Videos":
                         if not include_groups and not include_videos:
@@ -1981,6 +1993,8 @@ with col_search1:
                                 "top_k": current_top_k,
                                 "score_threshold": current_threshold
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
                         else:
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/selected-groups-videos"
                             payload = {
@@ -1990,6 +2004,8 @@ with col_search1:
                                 "include_groups": include_groups,
                                 "include_videos": include_videos
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
 
                     elif search_mode == "Include Video":
                         if 'video_scope_list' not in locals() or not video_scope_list:
@@ -2001,6 +2017,8 @@ with col_search1:
                                 "top_k": current_top_k,
                                 "score_threshold": current_threshold
                             }
+                            if enable_qexp:
+                                payload["qexp_enable"] = True
                         else:
                             endpoint = f"{st.session_state.api_base_url}/api/v1/keyframe/search/video-names"
                             payload = {
@@ -2103,6 +2121,11 @@ with col_search1:
                         # if False and ((use_metadata_filter and metadata_filter) or (use_object_filter and object_filter)):
                         #     st.warning(
                         #         "⚠️ Metadata and object filters are not supported with reranking. Using rerank only.")
+
+                    # Show Query Expansion status
+                    if enable_qexp:
+                        st.info(
+                            "🚀 Query Expansion (QExp) enabled: Multi-variant fusion and object-aware boost")
 
                     # If not using reranking but have metadata/object filters, use metadata-filter endpoint
                     elif (use_metadata_filter and metadata_filter) or (use_object_filter and object_filter):

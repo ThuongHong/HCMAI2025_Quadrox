@@ -84,7 +84,7 @@ class AppSettings(BaseSettings):
     # ASR_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'asr_proc.json')
 
     # Query Expansion (QExp) feature flags
-    QEXP_ENABLE: bool = Field(default=True)
-    QEXP_MAX_VARIANTS: int = Field(default=3)            # take top-N LLM variants
-    QEXP_FUSION: str = Field(default="max")              # "max" or "rrf"
-    QEXP_OBJECT_FILTER_AUTO: bool = Field(default=True)   # auto-apply object filter if available
+    QEXP_ENABLE: bool = Field(default=False)
+    QEXP_MAX_VARIANTS: int = Field(default=3)
+    QEXP_FUSION: str = Field(default="rrf")  # "max" or "rrf"
+    QEXP_OBJECT_FILTER_AUTO: bool = Field(default=True)

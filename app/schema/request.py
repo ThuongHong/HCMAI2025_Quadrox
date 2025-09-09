@@ -12,6 +12,12 @@ class BaseSearchRequest(BaseModel):
     score_threshold: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Minimum confidence score threshold")
 
+    # Query Expansion (QExp) optional overrides
+    qexp_enable: Optional[bool] = Field(default=None, description="Enable new QExp engine for this request")
+    qexp_top_variants: Optional[int] = Field(default=None, description="Top-N variants to keep")
+    qexp_fusion: Optional[str] = Field(default=None, description='Fusion method: "max" | "rrf"')
+    qexp_use_objects: Optional[bool] = Field(default=None, description="Auto object soft-boost when objects present")
+
     # Rerank parameters
     rerank: Optional[int] = Field(
         default=None, description="Enable reranking (0=off, 1=on)")

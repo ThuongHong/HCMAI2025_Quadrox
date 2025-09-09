@@ -149,6 +149,27 @@ class QueryController:
         # Create options with precedence
         return RerankOptions.from_request_and_config(rerank_params, config_defaults)
 
+    def _get_qexp_params(self, request_params: Dict[str, Any]) -> dict:
+        cfg = AppSettings()
+        return {
+            "enable": request_params.get("qexp_enable", cfg.QEXP_ENABLE),
+            "top_variants": int(request_params.get("qexp_top_variants", cfg.QEXP_MAX_VARIANTS)),
+            "fusion": request_params.get("qexp_fusion", cfg.QEXP_FUSION),
+            "use_objects": request_params.get("qexp_use_objects", cfg.QEXP_OBJECT_FILTER_AUTO),
+        }
+
+    def _stable_key(self, kf) -> str:
+        try:
+            db_id = getattr(kf, "db_id", None)
+            if db_id is not None:
+                return f"db:{db_id}"
+            vec_id = getattr(kf, "vector_id", None)
+            if vec_id is not None:
+                return f"vec:{vec_id}"
+            return f"{kf.group_num:02d}-{kf.video_num:03d}-{kf.keyframe_num:03d}"
+        except Exception:
+            return getattr(kf, "path", None) or getattr(kf, "rel_path", None) or str(id(kf))
+
     async def search_text(
         self,
         query: str,
@@ -156,63 +177,81 @@ class QueryController:
         score_threshold: float,
         rerank_params: Optional[Dict[str, Any]] = None
     ):
-        """Search text with optional reranking and query expansion."""
-        # Build rerank options
+        """Search text with optional reranking. New QExp engine is gated by qexp_enable."""
+        qexp = self._get_qexp_params(rerank_params or {})
+        if not qexp["enable"]:
+            # Legacy path (previous default)
+            refined_query, _objects = await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)
+            # Build rerank options
+            rerank_options = None
+            if rerank_params:
+                rerank_options = self._build_rerank_options(rerank_params)
+            embedding = self.model_service.embedding(refined_query).tolist()[0]
+            initial_top_k = top_k
+            if rerank_options and rerank_options.enable:
+                initial_top_k = max(top_k, rerank_options.sg_top_m)
+            result = await self.keyframe_service.search_by_text_with_full_metadata(embedding, initial_top_k, score_threshold)
+            if rerank_options and rerank_options.enable and result:
+                try:
+                    candidates = [item[0] for item in result]
+                    base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
+                    reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
+                        query=refined_query,
+                        base_candidates=candidates,
+                        base_embeddings=base_embeddings,
+                        query_embedding=embedding,
+                        options=rerank_options
+                    )
+                    orig_map = {id(c): s for c, s in result}
+                    result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Reranking failed, using original results: {e}")
+            return result[:top_k]
+
+        # New engine path
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
-
-        qexp = self._get_qexp_params(rerank_params or {})
-
-        # Multi-variant queries
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
-            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)[: qexp["top_variants"]]
+            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)
+            vv = [v for v in vv if (v.get("score") or 0.0) >= 7.5][: qexp["top_variants"]]
             for v in vv:
                 qv = v.get("query")
-                if not qv:
-                    continue
-                queries.append(qv)
-                w = max(0.4, min(1.0, (v.get("score") or 7.0) / 10.0))
-                weights.append(w)
-
-        # Adjust initial search size for reranking
+                if qv:
+                    queries.append(qv)
+                    weights.append(1.0)
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
-
-        # Compute embeddings and fuse
+        per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
         embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
-        result = await self.keyframe_service.search_multi_and_fuse(
+        if qexp["fusion"] == "rrf":
+            weights = [1.0] * len(queries)
+        result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
-            top_k=initial_top_k,
+            top_k=per_query_k,
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
         )
-
-        # Optional auto object filter
-        if qexp["use_objects"] and obj_list:
-            filtered = []
-            target = {o.lower() for o in obj_list}
+        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
+        if qexp["use_objects"] and valid_targets:
+            target = {o.lower() for o in valid_targets}
+            boosted = []
             for kf, sc in result:
-                kf_objs = set((kf.objects or [])) if hasattr(kf, 'objects') else set()
-                kf_objs = {o.lower() for o in kf_objs}
-                if target & kf_objs:
-                    filtered.append((kf, sc))
-            if filtered:
-                result = filtered
-
-        # Apply reranking if enabled
+                kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
+                bonus = 0.08 if (target & kf_objs) else 0.0
+                boosted.append((kf, sc + bonus))
+            result = sorted(boosted, key=lambda x: x[1], reverse=True)
         if rerank_options and rerank_options.enable and result:
             try:
-                # Extract candidates and their embeddings (from vector search)
-                candidates = [item[0] for item in result]  # keyframe objects
+                candidates = [item[0] for item in result]
                 base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
-
-                # Run rerank pipeline
                 reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
                     query=selected_query,
                     base_candidates=candidates,
@@ -220,16 +259,12 @@ class QueryController:
                     query_embedding=self.model_service.embedding(selected_query).tolist()[0],
                     options=rerank_options
                 )
-
-                # Reconstruct result strictly following reranked order,
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
-
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed, using fused results: {e}")
-
         return result[:top_k]
 
     async def search_text_with_exlude_group(
@@ -245,55 +280,83 @@ class QueryController:
             int(k) for k, v in self.id2index.items()
             if int(v.split('/')[0]) in list_group_exlude
         ]
-        # Build rerank and qexp options
+        qexp = self._get_qexp_params(rerank_params or {})
+        if not qexp["enable"]:
+            refined_query, _ = await self.keyframe_service._refine_query(query, self.llm, self.visual_extractor)
+            rerank_options = None
+            if rerank_params:
+                rerank_options = self._build_rerank_options(rerank_params)
+            embedding = self.model_service.embedding(refined_query).tolist()[0]
+            initial_top_k = top_k
+            if rerank_options and rerank_options.enable:
+                initial_top_k = max(top_k, rerank_options.sg_top_m)
+            result = await self.keyframe_service.search_by_text_exclude_ids_with_metadata(embedding, initial_top_k, score_threshold, exclude_ids)
+            if rerank_options and rerank_options.enable and result:
+                try:
+                    candidates = [item[0] for item in result]
+                    base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
+                    reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
+                        query=refined_query,
+                        base_candidates=candidates,
+                        base_embeddings=base_embeddings,
+                        query_embedding=embedding,
+                        options=rerank_options
+                    )
+                    orig_map = {id(c): s for c, s in result}
+                    result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Reranking failed: {e}")
+            return result[:top_k]
+
+        # New engine path
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
-        qexp = self._get_qexp_params(rerank_params or {})
-
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
-            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)[: qexp["top_variants"]]
+            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)
+            vv = [v for v in vv if (v.get("score") or 0.0) >= 7.5][: qexp["top_variants"]]
             for v in vv:
                 qv = v.get("query")
-                if not qv:
-                    continue
-                queries.append(qv)
-                w = max(0.4, min(1.0, (v.get("score") or 7.0) / 10.0))
-                weights.append(w)
+                if qv:
+                    queries.append(qv)
+                    weights.append(1.0)
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
+        per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
         embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
-        result = await self.keyframe_service.search_multi_and_fuse(
+        if qexp["fusion"] == "rrf":
+            weights = [1.0] * len(queries)
+        result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
-            top_k=initial_top_k,
+            top_k=per_query_k,
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
             exclude_ids=exclude_ids,
         )
 
-        if qexp["use_objects"] and obj_list:
-            filtered = []
-            target = {o.lower() for o in obj_list}
+        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
+        if qexp["use_objects"] and valid_targets:
+            target = {o.lower() for o in valid_targets}
+            boosted = []
             for kf, sc in result:
-                kf_objs = set((kf.objects or [])) if hasattr(kf, 'objects') else set()
-                kf_objs = {o.lower() for o in kf_objs}
-                if target & kf_objs:
-                    filtered.append((kf, sc))
-            if filtered:
-                result = filtered
+                kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
+                bonus = 0.08 if (target & kf_objs) else 0.0
+                boosted.append((kf, sc + bonus))
+            result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
                 base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
-
                 reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
                     query=selected_query,
                     base_candidates=candidates,
@@ -301,7 +364,6 @@ class QueryController:
                     query_embedding=self.model_service.embedding(selected_query).tolist()[0],
                     options=rerank_options
                 )
-
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
 
@@ -346,7 +408,7 @@ class QueryController:
                 )
             ]
 
-        # Build rerank and qexp options
+        # Build rerank + qexp
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
@@ -356,45 +418,46 @@ class QueryController:
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
-            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)[: qexp["top_variants"]]
+            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)
+            vv = [v for v in vv if (v.get("score") or 0.0) >= 7.5][: qexp["top_variants"]]
             for v in vv:
                 qv = v.get("query")
-                if not qv:
-                    continue
-                queries.append(qv)
-                w = max(0.4, min(1.0, (v.get("score") or 7.0) / 10.0))
-                weights.append(w)
+                if qv:
+                    queries.append(qv)
+                    weights.append(1.0)
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
+        per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
         embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
-        result = await self.keyframe_service.search_multi_and_fuse(
+        if qexp["fusion"] == "rrf":
+            weights = [1.0] * len(queries)
+        result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
-            top_k=initial_top_k,
+            top_k=per_query_k,
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
             exclude_ids=exclude_ids,
         )
 
-        if qexp["use_objects"] and obj_list:
-            filtered = []
-            target = {o.lower() for o in obj_list}
+        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
+        if qexp["use_objects"] and valid_targets:
+            target = {o.lower() for o in valid_targets}
+            boosted = []
             for kf, sc in result:
-                kf_objs = set((kf.objects or [])) if hasattr(kf, 'objects') else set()
-                kf_objs = {o.lower() for o in kf_objs}
-                if target & kf_objs:
-                    filtered.append((kf, sc))
-            if filtered:
-                result = filtered
+                kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
+                bonus = 0.08 if (target & kf_objs) else 0.0
+                boosted.append((kf, sc + bonus))
+            result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
                 base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
-
                 reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
                     query=selected_query,
                     base_candidates=candidates,
@@ -402,10 +465,8 @@ class QueryController:
                     query_embedding=self.model_service.embedding(selected_query).tolist()[0],
                     options=rerank_options
                 )
-
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
-
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
@@ -464,12 +525,11 @@ class QueryController:
         """
         Search for keyframes with metadata and object filtering plus optional reranking
         """
-        # Build rerank and qexp options
+        # Build rerank/QExp options
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
         qexp = self._get_qexp_params(rerank_params or {})
-
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
 
         # Convert MetadataFilter to dict format for the service
@@ -516,33 +576,45 @@ class QueryController:
                     "mode": object_filter.mode
                 }
 
-        # Build queries and embeddings
+        # Build queries and fuse with filters applied
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
-            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)[: qexp["top_variants"]]
+            vv = sorted(variants, key=lambda v: (v.get("score") or 0.0), reverse=True)
+            vv = [v for v in vv if (v.get("score") or 0.0) >= 7.5][: qexp["top_variants"]]
             for v in vv:
-                qv = v.get("query")
-                if not qv:
-                    continue
-                queries.append(qv)
-                w = max(0.4, min(1.0, (v.get("score") or 7.0) / 10.0))
-                weights.append(w)
+                if v.get("query"):
+                    queries.append(v.get("query"))
+                    weights.append(1.0)
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
+        per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
         embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
-        result = await self.keyframe_service.search_multi_and_fuse(
+        if qexp["fusion"] == "rrf":
+            weights = [1.0] * len(queries)
+        result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
-            top_k=initial_top_k,
+            top_k=per_query_k,
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
             metadata_filter=metadata_dict,
             object_filter=object_dict,
         )
+        # Optional object soft-boost only if no explicit object_filter
+        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
+        if qexp["use_objects"] and valid_targets and object_filter is None:
+            target = {o.lower() for o in valid_targets}
+            boosted = []
+            for kf, sc in result:
+                kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
+                bonus = 0.08 if (target & kf_objs) else 0.0
+                boosted.append((kf, sc + bonus))
+            result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
         # Apply reranking if enabled
         if rerank_options and rerank_options.enable and result:

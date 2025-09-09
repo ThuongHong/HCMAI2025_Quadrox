@@ -4,7 +4,7 @@ from repository.mongo import KeyframeRepository
 from repository.milvus import MilvusSearchRequest
 from repository.milvus import KeyframeVectorRepository
 from typing import Optional, Dict, Any
-import os, json, hashlib
+import json, hashlib
 from pathlib import Path
 from schema.agent import AgentResponse
 import os
@@ -36,6 +36,19 @@ class KeyframeQueryService:
         self._refine_cache: dict[str, tuple[str, list[str]]] = {}
         # Cache for QExp refinement: raw query -> (refined, objects, variants)
         self._refine_cache_qexp: dict[str, tuple[str, list[str], list[dict]]] = {}
+
+    def _stable_key(self, kf) -> str:
+        """Build a stable key for fusion across queries."""
+        try:
+            db_id = getattr(kf, "db_id", None)
+            if db_id is not None:
+                return f"db:{db_id}"
+            vec_id = getattr(kf, "vector_id", None)
+            if vec_id is not None:
+                return f"vec:{vec_id}"
+            return f"{kf.group_num:02d}-{kf.video_num:03d}-{kf.keyframe_num:03d}"
+        except Exception:
+            return getattr(kf, "path", None) or getattr(kf, "rel_path", None) or str(id(kf))
 
     async def _retrieve_keyframes(self, ids: list[int]):
         keyframes = await self.keyframe_mongo_repo.get_keyframe_by_list_of_keys(ids)
@@ -529,6 +542,137 @@ class KeyframeQueryService:
         # Store in cache for deterministic repetition
         self._refine_cache[query] = (refined_text, objects)
         return refined_text, objects
+
+    async def _refine_query_qexp(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str], list[dict]]:
+        """Translate+Enhance with LLM, JSON cache, return (selected_query, objects, variants)."""
+        # In-memory cache hit
+        if query in self._refine_cache_qexp:
+            cached = self._refine_cache_qexp[query]
+            return cached[0], cached[1], cached[2]
+
+        # Disk cache path
+        cache_dir = Path("./cache/qexp"); cache_dir.mkdir(parents=True, exist_ok=True)
+        qhash = hashlib.md5(query.encode("utf-8")).hexdigest()
+        cpath = cache_dir / f"{qhash}.json"
+
+        data: Optional[dict] = None
+        if cpath.exists():
+            try:
+                data = json.load(open(cpath, "r", encoding="utf-8"))
+                logger.debug(f"QExp cache hit for query -> {cpath.name}")
+            except Exception:
+                data = None
+
+        if data is None and visual_extractor is not None and llm is not None:
+            try:
+                agent_resp: AgentResponse = await visual_extractor.extract_visual_events(query)
+                data = agent_resp.model_dump()
+                try:
+                    json.dump(data, open(cpath, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+                    logger.debug(f"QExp cache saved: {cpath.name}")
+                except Exception:
+                    pass
+            except Exception:
+                data = None
+
+        if data is None:
+            self._refine_cache_qexp[query] = (query, [], [])
+            return query, [], []
+
+        agent = AgentResponse(**data)
+        selected_query = agent.refined_query.strip() or query
+
+        variants: list[dict] = []
+        for v in agent.query_variants or []:
+            try:
+                item = v if isinstance(v, dict) else v.model_dump()
+            except Exception:
+                item = {
+                    "query": getattr(v, "query", None),
+                    "score": getattr(v, "score", None),
+                    "rationale": getattr(v, "rationale", None),
+                }
+            if item.get("query") and str(item.get("query")).strip():
+                variants.append(item)
+
+        self._refine_cache_qexp[query] = (selected_query, agent.list_of_objects or [], variants)
+        return selected_query, agent.list_of_objects or [], variants
+
+    async def search_multi_and_fuse(
+        self,
+        embeddings: list[list[float]],
+        weights: list[float],
+        top_k: int,
+        score_threshold: float,
+        fusion: str = "max",
+        exclude_ids: Optional[list[int]] = None,
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        object_filter: Optional[Dict[str, Any]] = None,
+    ) -> tuple[list[tuple], dict[str, int]]:
+        """
+        For each embedding: vector search (per_query top_k), then fuse results.
+        Returns:
+          - list[(Keyframe, fused_score)]
+          - best_query_for: mapping stable_key -> query index (qi) with best base score
+        """
+        assert len(embeddings) == len(weights)
+
+        per_query_results: list[list[tuple]] = []
+        collected_maps: list[dict[int, list[float]]] = []
+
+        for emb in embeddings:
+            if metadata_filter is not None or object_filter is not None:
+                res = await self.search_by_text_with_metadata_filter_full(
+                    emb, top_k, score_threshold, metadata_filter, object_filter
+                )
+            elif exclude_ids is not None:
+                res = await self.search_by_text_exclude_ids_with_metadata(
+                    emb, top_k, score_threshold, exclude_ids
+                )
+            else:
+                res = await self.search_by_text_with_full_metadata(
+                    emb, top_k, score_threshold
+                )
+            per_query_results.append(res)
+            try:
+                collected_maps.append(dict(self._last_embedding_map))
+            except Exception:
+                pass
+
+        # Merge embedding maps across all queries
+        merged_map: dict[int, list[float]] = {}
+        for m in collected_maps:
+            merged_map.update(m)
+        if merged_map:
+            self._last_embedding_map = merged_map
+
+        best_query_for: dict[str, int] = {}
+        fused: dict[str, list] = {}
+        if fusion == "rrf":
+            K = 60
+            for qi, res in enumerate(per_query_results):
+                for rank, (cand, score) in enumerate(res, start=1):
+                    skey = self._stable_key(cand)
+                    cur = fused.setdefault(skey, [cand, 0.0, 0.0])  # [obj, fused_rrf, max_base]
+                    cur[1] += (1.0 / (K + rank))  # ignore weights in pure RRF
+                    if score > cur[2]:
+                        cur[2] = score
+                        best_query_for[skey] = qi
+            out = sorted(fused.values(), key=lambda x: (x[1], x[2]), reverse=True)
+            logger.debug(f"Fusion=RRF, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
+            return [(obj, _fscore) for obj, _fscore, _ in out[:top_k]], best_query_for
+
+        # MAX fusion: use max base score only (no weighting)
+        for qi, res in enumerate(per_query_results):
+            for cand, score in res:
+                skey = self._stable_key(cand)
+                cur = fused.setdefault(skey, [cand, 0.0])
+                if score > cur[1]:
+                    cur[1] = score
+                    best_query_for[skey] = qi
+        out = sorted(fused.values(), key=lambda x: x[1], reverse=True)
+        logger.debug(f"Fusion=MAX, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
+        return [(obj, sc) for obj, sc in out[:top_k]], best_query_for
 
     def get_embeddings_for_candidates(self, candidates: list[Any]) -> list[list[float]]:
         """Return embeddings for given candidate keyframes from last vector search.

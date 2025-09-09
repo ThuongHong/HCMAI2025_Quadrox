@@ -98,6 +98,8 @@ class Prompt:
         - DO NOT add facts not present or clearly implied by the user query.
         - Focus on VISUAL and OBJECT-ACTION elements actually observable in frames.
         - Keep queries in concise, retrieval-friendly English.
+        - "refined_query" MUST describe ONE coherent visual moment.
+        - If the user query has multiple scenes/actions, DO NOT combine them in "refined_query"; put extras into "query_variants".
         - Always return STRICT JSON matching the schema below.
 
         SCHEMA (JSON):
