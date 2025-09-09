@@ -88,3 +88,11 @@ class AppSettings(BaseSettings):
     QEXP_MAX_VARIANTS: int = Field(default=3)
     QEXP_FUSION: str = Field(default="rrf")  # "max" or "rrf"
     QEXP_OBJECT_FILTER_AUTO: bool = Field(default=True)
+    QEXP_OBJECT_BOOST: float = Field(default=0.08)
+    # Generic objects to ignore for auto-boost to avoid false lift
+    QEXP_OBJECT_GENERIC: set[str] = Field(
+        default={
+            "person", "people", "man", "woman",
+            "car", "chair", "table", "phone", "laptop", "tv", "screen", "cup", "bottle"
+        }
+    )

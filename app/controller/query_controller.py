@@ -22,6 +22,9 @@ ROOT_DIR = os.path.abspath(
 
 sys.path.insert(0, ROOT_DIR)
 
+from core.logger import SimpleLogger
+
+logger = SimpleLogger(__name__)
 class QueryController:
 
     def __init__(
@@ -113,6 +116,7 @@ class QueryController:
         return rerank_params
 
     def _get_qexp_params(self, request_params: Dict[str, Any]) -> dict:
+        """Return QExp runtime parameters with AppSettings defaults."""
         cfg = AppSettings()
         return {
             "enable": request_params.get("qexp_enable", cfg.QEXP_ENABLE),
@@ -149,14 +153,7 @@ class QueryController:
         # Create options with precedence
         return RerankOptions.from_request_and_config(rerank_params, config_defaults)
 
-    def _get_qexp_params(self, request_params: Dict[str, Any]) -> dict:
-        cfg = AppSettings()
-        return {
-            "enable": request_params.get("qexp_enable", cfg.QEXP_ENABLE),
-            "top_variants": int(request_params.get("qexp_top_variants", cfg.QEXP_MAX_VARIANTS)),
-            "fusion": request_params.get("qexp_fusion", cfg.QEXP_FUSION),
-            "use_objects": request_params.get("qexp_use_objects", cfg.QEXP_OBJECT_FILTER_AUTO),
-        }
+    # Removed duplicate _get_qexp_params to avoid confusion
 
     def _stable_key(self, kf) -> str:
         try:
@@ -214,6 +211,7 @@ class QueryController:
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        # Variant selection: keep only strong ones (score >= 7.5), capped by config
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
@@ -224,6 +222,7 @@ class QueryController:
                 if qv:
                     queries.append(qv)
                     weights.append(1.0)
+        logger.info(f"QExp enabled: queries={len(queries)} (kept_variants={len(queries)-1}), fusion={qexp['fusion']}")
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
@@ -238,16 +237,21 @@ class QueryController:
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
         )
-        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        # Soft object boost (configurable), skip if generic-only or explicit filter present
+        cfg = AppSettings()
+        GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
         valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
         if qexp["use_objects"] and valid_targets:
             target = {o.lower() for o in valid_targets}
+            before_n = len(result)
+            boost_val = float(getattr(cfg, 'QEXP_OBJECT_BOOST', 0.08))
             boosted = []
             for kf, sc in result:
                 kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
-                bonus = 0.08 if (target & kf_objs) else 0.0
+                bonus = boost_val if (target & kf_objs) else 0.0
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
+            logger.debug(f"Object boost applied: targets={len(target)}, candidates={before_n}")
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
@@ -324,6 +328,7 @@ class QueryController:
                 if qv:
                     queries.append(qv)
                     weights.append(1.0)
+        logger.info(f"QExp enabled (exclude groups): queries={len(queries)}, fusion={qexp['fusion']}")
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
@@ -342,14 +347,16 @@ class QueryController:
             exclude_ids=exclude_ids,
         )
 
-        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        cfg = AppSettings()
+        GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
         valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
         if qexp["use_objects"] and valid_targets:
             target = {o.lower() for o in valid_targets}
+            boost_val = float(getattr(cfg, 'QEXP_OBJECT_BOOST', 0.08))
             boosted = []
             for kf, sc in result:
                 kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
-                bonus = 0.08 if (target & kf_objs) else 0.0
+                bonus = boost_val if (target & kf_objs) else 0.0
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
@@ -425,6 +432,7 @@ class QueryController:
                 if qv:
                     queries.append(qv)
                     weights.append(1.0)
+        logger.info(f"QExp enabled (selected groups/videos): queries={len(queries)}, fusion={qexp['fusion']}")
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
@@ -443,14 +451,16 @@ class QueryController:
             exclude_ids=exclude_ids,
         )
 
-        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        cfg = AppSettings()
+        GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
         valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
         if qexp["use_objects"] and valid_targets:
             target = {o.lower() for o in valid_targets}
+            boost_val = float(getattr(cfg, 'QEXP_OBJECT_BOOST', 0.08))
             boosted = []
             for kf, sc in result:
                 kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
-                bonus = 0.08 if (target & kf_objs) else 0.0
+                bonus = boost_val if (target & kf_objs) else 0.0
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
@@ -605,16 +615,20 @@ class QueryController:
             object_filter=object_dict,
         )
         # Optional object soft-boost only if no explicit object_filter
-        GENERIC = {"person","man","woman","people","car","chair","table","cup","bottle","tv","screen","phone","laptop"}
+        cfg = AppSettings()
+        GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
         valid_targets = [o for o in (obj_list or []) if o and o.lower() not in GENERIC]
         if qexp["use_objects"] and valid_targets and object_filter is None:
             target = {o.lower() for o in valid_targets}
+            boost_val = float(getattr(cfg, 'QEXP_OBJECT_BOOST', 0.08))
+            before_n = len(result)
             boosted = []
             for kf, sc in result:
                 kf_objs = set(map(str.lower, getattr(kf, "objects", []) or []))
-                bonus = 0.08 if (target & kf_objs) else 0.0
+                bonus = boost_val if (target & kf_objs) else 0.0
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
+            logger.debug(f"Object boost applied (metadata-filter): targets={len(target)}, candidates={before_n}")
 
         # Apply reranking if enabled
         if rerank_options and rerank_options.enable and result:
@@ -623,7 +637,7 @@ class QueryController:
                 base_embeddings = self.keyframe_service.get_embeddings_for_candidates(candidates)
 
                 reranked_candidates = await self.rerank_pipeline.rerank_textual_kis(
-                    query=selected_query,
+                    query=selected_query,  # TODO: accept per-candidate query embeddings using best_qmap
                     base_candidates=candidates,
                     base_embeddings=base_embeddings,
                     query_embedding=self.model_service.embedding(selected_query).tolist()[0],
@@ -640,6 +654,43 @@ class QueryController:
                 logger.error(f"Reranking failed: {e}")
 
         return result[:top_k]
+
+    # --- Compatibility wrappers for router calls (do not change REST contracts) ---
+    async def search_text_exclude_groups(
+        self,
+        query: str,
+        top_k: int,
+        score_threshold: float,
+        exclude_groups: list[int],
+        rerank_params: Optional[Dict[str, Any]] = None
+    ):
+        """Router alias -> search_text_with_exlude_group (typo preserved in original)."""
+        return await self.search_text_with_exlude_group(
+            query=query,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            list_group_exlude=exclude_groups,
+            rerank_params=rerank_params,
+        )
+
+    async def search_text_include_groups_and_videos(
+        self,
+        query: str,
+        top_k: int,
+        score_threshold: float,
+        include_groups: list[int],
+        include_videos: list[int],
+        rerank_params: Optional[Dict[str, Any]] = None
+    ):
+        """Router alias -> search_with_selected_video_group."""
+        return await self.search_with_selected_video_group(
+            query=query,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            list_of_include_groups=include_groups,
+            list_of_include_videos=include_videos,
+            rerank_params=rerank_params,
+        )
 
     async def search_image(
         self,

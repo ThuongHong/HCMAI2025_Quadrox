@@ -357,7 +357,12 @@ class KeyframeQueryService:
         return response
 
     async def _refine_query_qexp(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str], list[dict]]:
-        """Translate+Enhance with LLM, JSON cache, return (selected_query, objects, variants)."""
+        """Translate+Enhance with LLM, JSON cache, return (selected_query, objects, variants).
+
+        Notes:
+        - Uses disk cache to keep QExp deterministic across repeats.
+        - Falls back safely to original query when LLM/caching fails.
+        """
         # In-memory cache hit
         if query in self._refine_cache_qexp:
             cached = self._refine_cache_qexp[query]
@@ -417,14 +422,21 @@ class KeyframeQueryService:
         weights: list[float],
         top_k: int,
         score_threshold: float,
-        fusion: str = "max",
+        fusion: str = "rrf",
         exclude_ids: Optional[list[int]] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
         object_filter: Optional[Dict[str, Any]] = None,
-    ) -> list[tuple]:
+    ) -> tuple[list[tuple], dict[str, int]]:
         """
-        For each embedding: vector search (top_k), then fuse results.
-        Returns: list[(Keyframe, fused_score)]
+        For each embedding: vector search (per-query top_k), then fuse results.
+
+        Returns:
+          - list[(Keyframe, fused_score)] sorted by fused score desc
+          - best_query_for: mapping stable_key -> query index (qi) where candidate achieved max base score
+
+        Fusion modes:
+          - "rrf": Reciprocal Rank Fusion, ignores weights; tie-break by max base score
+          - "max": Max of base scores across queries, ignores weights
         """
         assert len(embeddings) == len(weights)
 
@@ -450,33 +462,42 @@ class KeyframeQueryService:
             except Exception:
                 pass
 
-        # Merge embedding maps across all queries
+        # Merge embedding maps across all queries for downstream rerank use
         merged_map: dict[int, list[float]] = {}
         for m in collected_maps:
             merged_map.update(m)
         if merged_map:
             self._last_embedding_map = merged_map
 
-        # Fusion
-        fused: dict[int, list] = {}
+        best_query_for: dict[str, int] = {}
+        fused: dict[str, list] = {}
+
         if fusion == "rrf":
             K = 60
             for qi, res in enumerate(per_query_results):
                 for rank, (cand, score) in enumerate(res, start=1):
-                    key = getattr(cand, 'key', id(cand))
-                    fused.setdefault(key, [cand, 0.0, 0.0])
-                    fused[key][1] += (1.0 / (K + rank)) * weights[qi]
-                    fused[key][2] = max(fused[key][2], score)
+                    skey = self._stable_key(cand)
+                    cur = fused.setdefault(skey, [cand, 0.0, 0.0])  # [obj, fused_rrf, max_base]
+                    # RRF ignores provided weights to avoid biasing by query count
+                    cur[1] += (1.0 / (K + rank))
+                    if score > cur[2]:
+                        cur[2] = score
+                        best_query_for[skey] = qi
             out = sorted(fused.values(), key=lambda x: (x[1], x[2]), reverse=True)
-            return [(obj, _fscore) for obj, _fscore, _ in out[:top_k]]
+            logger.debug(f"Fusion=RRF, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
+            return [(obj, _fscore) for obj, _fscore, _ in out[:top_k]], best_query_for
 
+        # MAX fusion: use max base score only (no weighting)
         for qi, res in enumerate(per_query_results):
             for cand, score in res:
-                key = getattr(cand, 'key', id(cand))
-                fused.setdefault(key, [cand, 0.0])
-                fused[key][1] = max(fused[key][1], score * weights[qi])
+                skey = self._stable_key(cand)
+                cur = fused.setdefault(skey, [cand, 0.0])
+                if score > cur[1]:
+                    cur[1] = score
+                    best_query_for[skey] = qi
         out = sorted(fused.values(), key=lambda x: x[1], reverse=True)
-        return [(obj, sc) for obj, sc in out[:top_k]]
+        logger.debug(f"Fusion=MAX, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
+        return [(obj, sc) for obj, sc in out[:top_k]], best_query_for
 
     async def _refine_query(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str]]:
         """
@@ -543,136 +564,8 @@ class KeyframeQueryService:
         self._refine_cache[query] = (refined_text, objects)
         return refined_text, objects
 
-    async def _refine_query_qexp(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str], list[dict]]:
-        """Translate+Enhance with LLM, JSON cache, return (selected_query, objects, variants)."""
-        # In-memory cache hit
-        if query in self._refine_cache_qexp:
-            cached = self._refine_cache_qexp[query]
-            return cached[0], cached[1], cached[2]
+    # (Removed duplicate _refine_query_qexp implementation to avoid ambiguity)
 
-        # Disk cache path
-        cache_dir = Path("./cache/qexp"); cache_dir.mkdir(parents=True, exist_ok=True)
-        qhash = hashlib.md5(query.encode("utf-8")).hexdigest()
-        cpath = cache_dir / f"{qhash}.json"
-
-        data: Optional[dict] = None
-        if cpath.exists():
-            try:
-                data = json.load(open(cpath, "r", encoding="utf-8"))
-                logger.debug(f"QExp cache hit for query -> {cpath.name}")
-            except Exception:
-                data = None
-
-        if data is None and visual_extractor is not None and llm is not None:
-            try:
-                agent_resp: AgentResponse = await visual_extractor.extract_visual_events(query)
-                data = agent_resp.model_dump()
-                try:
-                    json.dump(data, open(cpath, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-                    logger.debug(f"QExp cache saved: {cpath.name}")
-                except Exception:
-                    pass
-            except Exception:
-                data = None
-
-        if data is None:
-            self._refine_cache_qexp[query] = (query, [], [])
-            return query, [], []
-
-        agent = AgentResponse(**data)
-        selected_query = agent.refined_query.strip() or query
-
-        variants: list[dict] = []
-        for v in agent.query_variants or []:
-            try:
-                item = v if isinstance(v, dict) else v.model_dump()
-            except Exception:
-                item = {
-                    "query": getattr(v, "query", None),
-                    "score": getattr(v, "score", None),
-                    "rationale": getattr(v, "rationale", None),
-                }
-            if item.get("query") and str(item.get("query")).strip():
-                variants.append(item)
-
-        self._refine_cache_qexp[query] = (selected_query, agent.list_of_objects or [], variants)
-        return selected_query, agent.list_of_objects or [], variants
-
-    async def search_multi_and_fuse(
-        self,
-        embeddings: list[list[float]],
-        weights: list[float],
-        top_k: int,
-        score_threshold: float,
-        fusion: str = "max",
-        exclude_ids: Optional[list[int]] = None,
-        metadata_filter: Optional[Dict[str, Any]] = None,
-        object_filter: Optional[Dict[str, Any]] = None,
-    ) -> tuple[list[tuple], dict[str, int]]:
-        """
-        For each embedding: vector search (per_query top_k), then fuse results.
-        Returns:
-          - list[(Keyframe, fused_score)]
-          - best_query_for: mapping stable_key -> query index (qi) with best base score
-        """
-        assert len(embeddings) == len(weights)
-
-        per_query_results: list[list[tuple]] = []
-        collected_maps: list[dict[int, list[float]]] = []
-
-        for emb in embeddings:
-            if metadata_filter is not None or object_filter is not None:
-                res = await self.search_by_text_with_metadata_filter_full(
-                    emb, top_k, score_threshold, metadata_filter, object_filter
-                )
-            elif exclude_ids is not None:
-                res = await self.search_by_text_exclude_ids_with_metadata(
-                    emb, top_k, score_threshold, exclude_ids
-                )
-            else:
-                res = await self.search_by_text_with_full_metadata(
-                    emb, top_k, score_threshold
-                )
-            per_query_results.append(res)
-            try:
-                collected_maps.append(dict(self._last_embedding_map))
-            except Exception:
-                pass
-
-        # Merge embedding maps across all queries
-        merged_map: dict[int, list[float]] = {}
-        for m in collected_maps:
-            merged_map.update(m)
-        if merged_map:
-            self._last_embedding_map = merged_map
-
-        best_query_for: dict[str, int] = {}
-        fused: dict[str, list] = {}
-        if fusion == "rrf":
-            K = 60
-            for qi, res in enumerate(per_query_results):
-                for rank, (cand, score) in enumerate(res, start=1):
-                    skey = self._stable_key(cand)
-                    cur = fused.setdefault(skey, [cand, 0.0, 0.0])  # [obj, fused_rrf, max_base]
-                    cur[1] += (1.0 / (K + rank))  # ignore weights in pure RRF
-                    if score > cur[2]:
-                        cur[2] = score
-                        best_query_for[skey] = qi
-            out = sorted(fused.values(), key=lambda x: (x[1], x[2]), reverse=True)
-            logger.debug(f"Fusion=RRF, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
-            return [(obj, _fscore) for obj, _fscore, _ in out[:top_k]], best_query_for
-
-        # MAX fusion: use max base score only (no weighting)
-        for qi, res in enumerate(per_query_results):
-            for cand, score in res:
-                skey = self._stable_key(cand)
-                cur = fused.setdefault(skey, [cand, 0.0])
-                if score > cur[1]:
-                    cur[1] = score
-                    best_query_for[skey] = qi
-        out = sorted(fused.values(), key=lambda x: x[1], reverse=True)
-        logger.debug(f"Fusion=MAX, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
-        return [(obj, sc) for obj, sc in out[:top_k]], best_query_for
 
     def get_embeddings_for_candidates(self, candidates: list[Any]) -> list[list[float]]:
         """Return embeddings for given candidate keyframes from last vector search.
