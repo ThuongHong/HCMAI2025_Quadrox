@@ -102,6 +102,14 @@ class Prompt:
         - If the user query has multiple scenes/actions, DO NOT combine them in "refined_query"; put extras into "query_variants".
         - Always return STRICT JSON matching the schema below.
 
+        ADDITIONAL STRICT RULES (VERBATIM QUOTES):
+        - The user query may include placeholders like [[VERBATIM_1]], [[VERBATIM_2]], etc., which stand for
+          original quoted substrings from the user INCLUDING their surrounding quote marks.
+        - You MUST copy these placeholders EXACTLY AS-IS into your outputs. Do not translate, modify, remove,
+          or add extra quotes around them—they already encapsulate the original text.
+        - When writing "refined_query" and each "query_variants[i].query", keep these placeholders intact.
+        - NEVER extract COCO objects from inside these placeholders. Treat them as literal non-object text.
+
         SCHEMA (JSON):
         {
           "refined_query": "<primary refined English query>",

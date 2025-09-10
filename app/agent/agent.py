@@ -13,6 +13,48 @@ from .promts import Prompt, COCO_CLASS
 
 
 
+# --- Verbatim quoted text helpers (ASCII "..." and curly “ … ”) ---
+from typing import Dict, Tuple
+
+_QUOTE_PATTERNS = [
+    (r'"([^"]+)"', '"', '"'),      # ASCII quotes
+    (r'“([^”]+)”', '“', '”'),      # Curly quotes
+]
+
+def _preserve_verbatim_quoted(text: str) -> Tuple[str, Dict[str, str]]:
+    """
+    Replace quoted substrings with [[VERBATIM_i]] placeholders.
+    Return (processed_text, mapping). Mapping values INCLUDE original quotes.
+    """
+    mapping: Dict[str, str] = {}
+    work = text
+    counter = 1
+    changed = True
+    while changed:
+        changed = False
+        for pat, lq, rq in _QUOTE_PATTERNS:
+            def _sub(m):
+                nonlocal counter, changed
+                inner = m.group(1)
+                original = f"{lq}{inner}{rq}"  # keep quotes exactly
+                token = f"[[VERBATIM_{counter}]]"
+                counter += 1
+                mapping[token] = original
+                changed = True
+                return token
+            work = re.sub(pat, _sub, work)
+    return work, mapping
+
+def _restore_verbatim_tokens(text: str, mapping: Dict[str, str]) -> str:
+    if not isinstance(text, str) or not mapping:
+        return text
+    out = text
+    for token, original in mapping.items():
+        out = out.replace(token, original)
+    return out
+
+
+
 class VisualEventExtractor:
     
     def __init__(self, llm: LLM):
@@ -22,24 +64,52 @@ class VisualEventExtractor:
 
     async def extract_visual_events(self, query: str) -> AgentResponse:
         import json
-        prompt = self.extraction_prompt.format(query=query, coco=COCO_CLASS)
+        # PRE: protect quoted phrases
+        protected_query, verb_map = _preserve_verbatim_quoted(query)
+
+        prompt = self.extraction_prompt.format(query=protected_query, coco=COCO_CLASS)
         try:
             resp = await self.llm.achat(prompt)
             txt = resp.message.content if hasattr(resp, "message") else str(resp)
-            # Try strict parse first
+
+            # Strict parse -> substring fallback
             try:
                 data = json.loads(txt)
             except Exception:
-                # Fallback: extract JSON object substring
-                start = txt.find("{")
-                end = txt.rfind("}")
+                start = txt.find("{"); end = txt.rfind("}")
                 if start != -1 and end != -1 and end > start:
                     data = json.loads(txt[start:end+1])
                 else:
                     raise
+
+            # POST: restore placeholders in outputs
+            if isinstance(data.get("refined_query"), str):
+                data["refined_query"] = _restore_verbatim_tokens(data["refined_query"], verb_map)
+
+            if isinstance(data.get("query_variants"), list):
+                fixed = []
+                for v in data["query_variants"]:
+                    if isinstance(v, dict):
+                        q = v.get("query")
+                        if isinstance(q, str):
+                            v["query"] = _restore_verbatim_tokens(q, verb_map)
+                        r = v.get("rationale")
+                        if isinstance(r, str):
+                            v["rationale"] = _restore_verbatim_tokens(r, verb_map)
+                    fixed.append(v)
+                data["query_variants"] = fixed
+
+            # Safety: list_of_objects should not contain placeholders; drop any if present
+            if isinstance(data.get("list_of_objects"), list):
+                data["list_of_objects"] = [
+                    o for o in data["list_of_objects"]
+                    if not (isinstance(o, str) and o.startswith("[[VERBATIM_"))
+                ]
+
             return AgentResponse(**data)
+
         except Exception:
-            # Safe fallback
+            # Fallback: keep original query verbatim
             return AgentResponse(refined_query=query, list_of_objects=[], query_variants=[])
     
 

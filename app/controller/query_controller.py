@@ -51,6 +51,31 @@ class QueryController:
             cache_base_dir="./cache",
         )
 
+    # --- Internal: make CLIP-friendly embedding text without altering outputs/logs ---
+    def _normalize_for_embedding(self, text: str) -> str:
+        """Insert a neutral descriptor before quoted phrases to help CLIP understand it's visible text.
+        Keeps quoted content verbatim; affects only the string used for embedding.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+        out = text
+        # Add "phrase " before ASCII quotes if not already preceded by common descriptors
+        out = __import__("re").sub(
+            r"(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(\"[^\"]+\")",
+            r"phrase \g<0>",
+            out,
+        )
+        # Add "phrase " before curly quotes if not already preceded
+        out = __import__("re").sub(
+            r"(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])",
+            r"phrase \g<0>",
+            out,
+        )
+        return out
+
+    def _embedding_for_query(self, text: str):
+        return self.model_service.embedding(self._normalize_for_embedding(text)).tolist()[0]
+
     def convert_model_to_path(
         self,
         model: KeyframeServiceReponse
@@ -183,7 +208,7 @@ class QueryController:
             rerank_options = None
             if rerank_params:
                 rerank_options = self._build_rerank_options(rerank_params)
-            embedding = self.model_service.embedding(refined_query).tolist()[0]
+            embedding = self._embedding_for_query(refined_query)
             initial_top_k = top_k
             if rerank_options and rerank_options.enable:
                 initial_top_k = max(top_k, rerank_options.sg_top_m)
@@ -227,7 +252,7 @@ class QueryController:
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
         per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
-        embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
+        embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
@@ -260,14 +285,12 @@ class QueryController:
                     query=selected_query,
                     base_candidates=candidates,
                     base_embeddings=base_embeddings,
-                    query_embedding=self.model_service.embedding(selected_query).tolist()[0],
+                    query_embedding=self._embedding_for_query(selected_query),
                     options=rerank_options
                 )
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed, using fused results: {e}")
         return result[:top_k]
 
@@ -290,7 +313,7 @@ class QueryController:
             rerank_options = None
             if rerank_params:
                 rerank_options = self._build_rerank_options(rerank_params)
-            embedding = self.model_service.embedding(refined_query).tolist()[0]
+            embedding = self._embedding_for_query(refined_query)
             initial_top_k = top_k
             if rerank_options and rerank_options.enable:
                 initial_top_k = max(top_k, rerank_options.sg_top_m)
@@ -335,7 +358,7 @@ class QueryController:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
         per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
-        embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
+        embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
@@ -368,15 +391,13 @@ class QueryController:
                     query=selected_query,
                     base_candidates=candidates,
                     base_embeddings=base_embeddings,
-                    query_embedding=self.model_service.embedding(selected_query).tolist()[0],
+                    query_embedding=self._embedding_for_query(selected_query),
                     options=rerank_options
                 )
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
 
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed: {e}")
 
         return result[:top_k]
@@ -439,7 +460,7 @@ class QueryController:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
         per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
-        embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
+        embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
@@ -472,14 +493,12 @@ class QueryController:
                     query=selected_query,
                     base_candidates=candidates,
                     base_embeddings=base_embeddings,
-                    query_embedding=self.model_service.embedding(selected_query).tolist()[0],
+                    query_embedding=self._embedding_for_query(selected_query),
                     options=rerank_options
                 )
                 orig_map = {id(c): s for c, s in result}
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed: {e}")
 
         return result[:top_k]
@@ -602,7 +621,7 @@ class QueryController:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
         per_query_k = initial_top_k if not qexp["enable"] else max(initial_top_k, min(200, int(initial_top_k * 1.5)))
 
-        embeddings = [self.model_service.embedding(q).tolist()[0] for q in queries]
+        embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
@@ -640,7 +659,7 @@ class QueryController:
                     query=selected_query,  # TODO: accept per-candidate query embeddings using best_qmap
                     base_candidates=candidates,
                     base_embeddings=base_embeddings,
-                    query_embedding=self.model_service.embedding(selected_query).tolist()[0],
+                    query_embedding=self._embedding_for_query(selected_query),
                     options=rerank_options
                 )
 
@@ -649,8 +668,6 @@ class QueryController:
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
 
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed: {e}")
 
         return result[:top_k]
@@ -736,8 +753,6 @@ class QueryController:
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
 
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Reranking failed: {e}")
 
         return result[:top_k]

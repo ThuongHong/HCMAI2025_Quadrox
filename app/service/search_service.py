@@ -15,6 +15,7 @@ ROOT_DIR = os.path.abspath(
     )
 )
 sys.path.insert(0, ROOT_DIR)
+from agent.agent import _preserve_verbatim_quoted, _restore_verbatim_tokens
 
 
 logger = SimpleLogger(__name__)
@@ -516,14 +517,19 @@ class KeyframeQueryService:
             return query, []
 
         # Step 1: Translation + enhancement via structured schema
+        # Protect any quoted substrings to prevent translation/modification inside quotes
+        _protected_query, _verb_map = _preserve_verbatim_quoted(query)
+
         translation_prompt = (
             "You are a retrieval query optimizer.\n"
             "1) Detect language; if Vietnamese, translate to English. If already English, keep text.\n"
             "2) Produce an enhanced English query optimized for semantic video/keyframe retrieval:\n"
             "   - Use concrete visual nouns, actions, colors, settings, spatial relations\n"
             "   - Remove filler; keep core visual concepts\n"
+            "IMPORTANT: If the input contains placeholders like [[VERBATIM_1]], [[VERBATIM_2]], etc., copy them EXACTLY\n"
+            "as-is into both fields; do not translate or modify them—they already encapsulate original quoted text.\n"
             "Return strict JSON: {\"translated_query\":\"<english>\", \"enhanced_query\":\"<optimized>\"}.\n\n"
-            f"Input: \"\"\"{query}\"\"\""
+            f"Input: \"\"\"{_protected_query}\"\"\""
         )
 
         refined_text = query
@@ -536,8 +542,10 @@ class KeyframeQueryService:
                 resp = await llm.as_structured_llm(QueryRefineResponse).acomplete(translation_prompt)
             obj = resp.raw  # pydantic object
             translated_text = (obj.translated_query or query).strip()
-            refined_text = (
-                obj.enhanced_query or translated_text or query).strip()
+            refined_text = (obj.enhanced_query or translated_text or query).strip()
+            # Restore any protected quoted substrings
+            translated_text = _restore_verbatim_tokens(translated_text, _verb_map)
+            refined_text = _restore_verbatim_tokens(refined_text, _verb_map)
             logger.debug(
                 f"Query refined: '{query}' -> '{refined_text}' (translated: '{translated_text}')")
         except Exception:
