@@ -101,44 +101,17 @@ class QueryController:
         return self.model_service.embedding(self._normalize_for_embedding(limited)).tolist()[0]
 
     def _ensure_english_or_warn(self, text: str) -> str:
-        """Best-effort ensure English output while preserving quoted spans verbatim.
-        If LLM/agent failed to produce English and LLM is available, request a
-        minimal translation. Otherwise, return original and log a warning.
+        """No-op safety: log if looks non-English, but do not call LLM here.
+        Rationale: agent already produces English; avoid async LLM in sync path.
         """
-        try:
-            # Heuristic: if there are many non-ASCII letters, probably non-English
-            if not isinstance(text, str) or not text:
-                return text
-            non_ascii = sum(1 for ch in text if ord(ch) > 127 and ch not in ("“", "”", "\u201C", "\u201D"))
-            if non_ascii == 0:
-                return text
-            if self.llm is None:
-                logger.warn("Agent/LLM unavailable; using original text for embedding")
-                return text
-            # Preserve quoted substrings; require placeholders to be copied verbatim
-            protected, vmap = _preserve_verbatim_quoted(text)
-            prompt = (
-                "Translate the following to concise English for visual retrieval.\n"
-                "- Copy placeholders [[VERBATIM_i]] EXACTLY as-is; do NOT translate or modify them.\n"
-                "- Return ONLY the translated text, no quotes or extra commentary.\n\n"
-                f"TEXT:\n{protected}"
-            )
-            resp = None
-            try:
-                resp = self.llm
-                out = self.llm.complete(prompt).text  # type: ignore[attr-defined]
-            except Exception:
-                # Fallback to chat interface if needed
-                out = (self.llm.achat(prompt)).message.content  # type: ignore
-            translated = str(out or "").strip()
-            if not translated:
-                logger.warn("Translation returned empty; using original text")
-                return text
-            restored = _restore_verbatim_tokens(translated, vmap)
-            return restored
-        except Exception:
-            logger.warn("ensure_english fallback failed; using original text")
+        if not isinstance(text, str) or not text:
             return text
+        non_ascii = sum(1 for ch in text if ord(ch) > 127 and ch not in ("“", "”"))
+        # Override to robust check; include all non-ASCII chars
+        non_ascii = sum(1 for ch in text if ord(ch) > 127)
+        if non_ascii > 0:
+            logger.warning("Text may be non-English; relying on agent's English refine.")
+        return text
 
     def convert_model_to_path(
         self,
@@ -300,11 +273,7 @@ class QueryController:
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
         t_q0 = time.perf_counter()
-        t_q0 = time.perf_counter()
-        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
-        t_qexp = time.perf_counter() - t_q0
-        t_qexp = time.perf_counter() - t_q0
         t_qexp = time.perf_counter() - t_q0
         # English-first safeguard for embedding
         selected_query = self._ensure_english_or_warn(selected_query)
@@ -468,6 +437,7 @@ class QueryController:
             weights = [1.0] * len(queries)
         t_sf0 = time.perf_counter()
         t_sf0 = time.perf_counter()
+        t_sf0 = time.perf_counter()
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
@@ -476,6 +446,7 @@ class QueryController:
             fusion=qexp["fusion"],
             exclude_ids=exclude_ids,
         )
+        t_searchfuse = time.perf_counter() - t_sf0
         t_searchfuse = time.perf_counter() - t_sf0
         t_searchfuse = time.perf_counter() - t_sf0
         try:
@@ -560,7 +531,9 @@ class QueryController:
             rerank_options = self._build_rerank_options(rerank_params)
         qexp = self._get_qexp_params(rerank_params or {})
 
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
         selected_query = self._ensure_english_or_warn(selected_query)
         queries = [selected_query]
         weights = [1.0]
@@ -620,7 +593,6 @@ class QueryController:
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
         t_sg0 = time.perf_counter()
-        t_sg0 = time.perf_counter()
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
@@ -637,9 +609,11 @@ class QueryController:
             except Exception as e:
                 logger.error(f"Reranking failed: {e}")
         t_sg = time.perf_counter() - t_sg0 if (rerank_options and rerank_options.enable) else 0.0
-        logger.debug(f"timings (selected groups/videos) {qexp['fusion']} { { 'qexp': round(t_qexp,3), 'search+fuse': round(t_searchfuse,3), 'sg': round(t_sg,3) } }, per_query_k={per_query_k}")
-        t_sg = time.perf_counter() - t_sg0 if (rerank_options and rerank_options.enable) else 0.0
-        logger.debug(f"timings (exclude) {qexp['fusion']} { { 'qexp': round(t_qexp,3), 'search+fuse': round(t_searchfuse,3), 'sg': round(t_sg,3) } }, per_query_k={per_query_k}")
+        try:
+            logger.debug(f"timings (selected groups/videos) {qexp['fusion']} {{ 'qexp': {round(t_qexp,3)}, 'search+fuse': {round(t_searchfuse,3)}, 'sg': {round(t_sg,3)} }}, per_query_k={per_query_k}")
+        except NameError:
+            # If t_qexp missing due to earlier exception, skip detailed timing
+            logger.debug(f"timings (selected groups/videos) {qexp['fusion']} (partial timings)")
 
         return result[:top_k]
 
@@ -699,7 +673,9 @@ class QueryController:
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
         qexp = self._get_qexp_params(rerank_params or {})
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
         selected_query = self._ensure_english_or_warn(selected_query)
 
         # Convert MetadataFilter to dict format for the service
@@ -923,3 +899,5 @@ class QueryController:
         translate + enhance
         """
         return await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+
+

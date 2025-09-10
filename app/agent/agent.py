@@ -17,15 +17,10 @@ from .promts import Prompt, COCO_CLASS
 from typing import Dict, Tuple
 
 _QUOTE_PATTERNS = [
-    (r'"([^"]+)"', '"', '"'),      # ASCII quotes
-    (r'“([^”]+)”', '“', '”'),      # Curly quotes
-]
-
-# Override _QUOTE_PATTERNS with robust unicode-aware regex (keeps ASCII quotes rule)
-_QUOTE_PATTERNS = [
     (r'\"([^\"]+)\"', '"', '"'),                 # ASCII quotes
     (r'[\u201C]([^\u201D]+)[\u201D]', '“', '”'),     # Curly quotes
 ]
+
 
 def _preserve_verbatim_quoted(text: str) -> Tuple[str, Dict[str, str]]:
     """
@@ -41,8 +36,8 @@ def _preserve_verbatim_quoted(text: str) -> Tuple[str, Dict[str, str]]:
         for pat, lq, rq in _QUOTE_PATTERNS:
             def _sub(m):
                 nonlocal counter, changed
-                inner = m.group(1)
-                original = f"{lq}{inner}{rq}"  # keep quotes exactly
+                # Use full match to preserve exact original quotes and punctuation
+                original = m.group(0)
                 token = f"[[VERBATIM_{counter}]]"
                 counter += 1
                 mapping[token] = original

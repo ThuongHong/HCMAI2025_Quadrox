@@ -436,8 +436,10 @@ class KeyframeQueryService:
           - best_query_for: mapping stable_key -> query index (qi) where candidate achieved max base score
 
         Fusion modes:
-          - "rrf": Reciprocal Rank Fusion, ignores weights; tie-break by max base score
-          - "max": Max of base scores across queries, ignores weights
+          - "rrf": Reciprocal Rank Fusion (w=1.0); tie-break by max base score
+          - "weighted_rrf": Weighted RRF with weights clamped to [0.4, 1.0]
+          - "max": Max of base scores across queries (no weighting)
+          - "max_weighted": Max of (weight * base score) with weights in [0.4, 1.0]
         """
         assert len(embeddings) == len(weights)
 
