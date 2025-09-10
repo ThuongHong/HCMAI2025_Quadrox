@@ -53,22 +53,31 @@ class QueryController:
 
     # --- Internal: make CLIP-friendly embedding text without altering outputs/logs ---
     def _normalize_for_embedding(self, text: str) -> str:
-        """Insert a neutral descriptor before quoted phrases to help CLIP understand it's visible text.
-        Keeps quoted content verbatim; affects only the string used for embedding.
+        """Insert a neutral descriptor before quoted phrases so CLIP treats them as visible text.
+        - Preserves quoted content verbatim; only modifies the embedding input string.
+        - Handles ASCII double quotes, curly quotes, and (carefully) ASCII single quotes.
         """
+        import re
         if not isinstance(text, str) or not text:
             return text
         out = text
-        # Add "phrase " before ASCII quotes if not already preceded by common descriptors
-        out = __import__("re").sub(
-            r"(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(\"[^\"]+\")",
-            r"phrase \g<0>",
+        # Add "phrase " before ASCII double-quoted spans: "..."
+        out = re.sub(
+            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )("[^"]+")',
+            r'phrase \g<0>',
             out,
         )
-        # Add "phrase " before curly quotes if not already preceded
-        out = __import__("re").sub(
-            r"(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])",
-            r"phrase \g<0>",
+        # Add "phrase " before curly-quoted spans: “...”, ”...”
+        out = re.sub(
+            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])',
+            r'phrase \g<0>',
+            out,
+        )
+        # Add "phrase " before ASCII single-quoted spans: '\'...\''
+        # Avoid contractions/possessives by requiring no word-char immediately before the quote
+        out = re.sub(
+            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(?<!\w)(\'[^\']+\')',
+            r'phrase \g<0>',
             out,
         )
         return out
