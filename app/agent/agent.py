@@ -21,6 +21,12 @@ _QUOTE_PATTERNS = [
     (r'“([^”]+)”', '“', '”'),      # Curly quotes
 ]
 
+# Override _QUOTE_PATTERNS with robust unicode-aware regex (keeps ASCII quotes rule)
+_QUOTE_PATTERNS = [
+    (r'\"([^\"]+)\"', '"', '"'),                 # ASCII quotes
+    (r'[\u201C]([^\u201D]+)[\u201D]', '“', '”'),     # Curly quotes
+]
+
 def _preserve_verbatim_quoted(text: str) -> Tuple[str, Dict[str, str]]:
     """
     Replace quoted substrings with [[VERBATIM_i]] placeholders.

@@ -1,4 +1,4 @@
-# HCMAI2025_Baseline
+# HCMC AIC 2025
 
 A FastAPI-based AI application powered by Milvus for vector search, MongoDB for metadata storage, and MinIO for object storage.
 
