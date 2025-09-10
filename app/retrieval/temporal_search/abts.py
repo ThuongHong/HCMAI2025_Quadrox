@@ -39,6 +39,7 @@ def auto_temporal_window(
     best = Window(pivot.pts_time - delta, pivot.pts_time + delta)
 
     prev_conf = None
+    expansions = 0  # ensure a few expansions to be robust on sparse edges
     while delta < max_delta:
         left = pivot.pts_time - delta
         right = pivot.pts_time + delta
@@ -49,27 +50,37 @@ def auto_temporal_window(
             neigh = normalize(neigh)
 
         # edge confidence ~ average of top-K scores near edges
-        left_edge = sorted(
-            [s for (_fi, t, s) in neigh if left <= t <= left + step],
-            key=lambda x: x,
-            reverse=True,
-        )[:stability_k]
-        right_edge = sorted(
-            [s for (_fi, t, s) in neigh if right - step <= t <= right],
-            key=lambda x: x,
-            reverse=True,
-        )[:stability_k]
+        def _collect_edge_scores(neigh_arr, l, r, win, k):
+            left_edge = sorted(
+                [s for (_fi, t, s) in neigh_arr if l <= t <= l + win], reverse=True
+            )[:k]
+            right_edge = sorted(
+                [s for (_fi, t, s) in neigh_arr if r - win <= t <= r], reverse=True
+            )[:k]
+            return left_edge, right_edge
+
+        left_edge, right_edge = _collect_edge_scores(neigh, left, right, step, stability_k)
+        # If sparse near edges, widen once
+        if len(left_edge) < stability_k or len(right_edge) < stability_k:
+            widened = neighborhood_fetch(pivot.video_id, left - step, right + step)
+            if normalize:
+                widened = normalize(widened)
+            left_edge2, right_edge2 = _collect_edge_scores(widened, left, right, step * 2.0, stability_k)
+            if len(left_edge2) >= len(left_edge):
+                left_edge = left_edge2
+            if len(right_edge2) >= len(right_edge):
+                right_edge = right_edge2
 
         def avg(xs):
             return float(np.mean(xs)) if xs else 0.0
 
         edge_conf = 0.5 * (avg(left_edge) + avg(right_edge))
 
-        if prev_conf is None or (prev_conf - edge_conf) < min_conf_drop:
+        if prev_conf is None or expansions < 3 or (prev_conf - edge_conf) < min_conf_drop:
             best = Window(left, right)
             prev_conf = edge_conf
             delta += step
+            expansions += 1
         else:
             break
     return best
-

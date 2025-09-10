@@ -140,7 +140,7 @@ We added opt-in Temporal Search to improve KIS/TRAKE metrics without changing ex
 - Interactive mode: Pick a pivot result and choose ±Δ seconds to browse neighboring keyframes chronologically.
 
 Backend:
-- New endpoint `POST /keyframe/temporal/enrich`.
+- New endpoint `POST /api/v1/keyframe/temporal/enrich`.
 - Request fields: `mode` (auto|interactive), `pivot_video_id` (e.g., L01_V001) or (`pivot_group_num`,`pivot_video_num`), and either `pivot_n` or (`pivot_frame_idx` & `pivot_pts_time`), optional `delta` for interactive.
 - Response includes `pivot`, time `window`, and `clusters` with representative keyframe per cluster.
 
@@ -151,3 +151,11 @@ Implementation notes:
 - Uses `resources/map-keyframes/<video_id>.csv` with columns `n, pts_time, fps, frame_idx`.
 - Clustering groups by contiguous time with default 10s gap.
 - When similarity is unavailable per keyframe, temporal decay by distance to pivot provides stable expansion and ordering.
+
+Environment:
+- `MAP_KEYFRAMES_ROOT` can override the map-keyframes directory (defaults to repo_root/resources/map-keyframes). `MAP_KEYFRAMES_DIR` is also accepted.
+
+Optional:
+- You may register a custom temporal scorer to mix quick query similarity into ABTS edge confidence:
+  - `from app.retrieval.temporal_search.service import register_temporal_scorer`
+  - `register_temporal_scorer(fn)` where `fn(video_id, [(frame_idx, pts_time, score_like)]) -> rescored list`

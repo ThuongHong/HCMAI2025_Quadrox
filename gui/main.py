@@ -2593,7 +2593,21 @@ if st.session_state.search_results:
                     pivot_video_id = ""
 
                 pivot_pts_time = pivot.get('pts_time')
-                pivot_n = n_from_path if n_from_path else pivot.get('frame_idx')
+                # Prepare pivot fields correctly
+                pivot_n = int(n_from_path) if n_from_path else None
+                pivot_frame_idx = None
+                # If we don't have n, try using real_frame_idx (preferred) or frame_idx as absolute frame index
+                if pivot_n is None:
+                    if pivot.get('real_frame_idx') is not None:
+                        try:
+                            pivot_frame_idx = int(pivot.get('real_frame_idx'))
+                        except Exception:
+                            pivot_frame_idx = None
+                    elif pivot.get('frame_idx') is not None:
+                        try:
+                            pivot_frame_idx = int(pivot.get('frame_idx'))
+                        except Exception:
+                            pivot_frame_idx = None
 
                 # Interactive delta
                 delta = 5.0
@@ -2601,12 +2615,16 @@ if st.session_state.search_results:
                     delta = float(st.slider("±Δ seconds", min_value=3.0, max_value=20.0, value=5.0, step=0.5))
 
                 # Call backend to get clusters
+                pivot_pts_time_val = float(pivot_pts_time) if pivot_pts_time is not None else None
+                pivot_score_val = float(pivot.get('score', 0.0)) if pivot.get('score') is not None else None
+
                 payload = {
                     "mode": "auto" if mode == "Auto" else "interactive",
                     "pivot_video_id": pivot_video_id,
-                    "pivot_n": int(pivot_n) if pivot_n is not None else None,
-                    "pivot_pts_time": float(pivot_pts_time) if pivot_pts_time is not None else None,
-                    "pivot_score": float(pivot.get('score', 0.0)) if pivot.get('score') is not None else None,
+                    "pivot_n": pivot_n,
+                    "pivot_frame_idx": pivot_frame_idx,
+                    "pivot_pts_time": pivot_pts_time_val,
+                    "pivot_score": pivot_score_val,
                     "delta": delta,
                 }
                 try:
@@ -2616,7 +2634,8 @@ if st.session_state.search_results:
                         tview = resp.json()
 
                         # Render clusters
-                        st.markdown(f"Pivot: `{pivot_video_id}`, n={pivot_n}, t={pivot_pts_time:.2f}s")
+                        t_text = f"{pivot_pts_time_val:.2f}s" if pivot_pts_time_val is not None else "?"
+                        st.markdown(f"Pivot: `{pivot_video_id}`, n={pivot_n}, t={t_text}")
                         # Try to infer keyframes root from pivot path
                         sample_path = pivot.get('path', '')
                         def build_img_path(video_id: str, n: int, sample_path: str) -> str:
@@ -2641,7 +2660,7 @@ if st.session_state.search_results:
                                     try:
                                         st.image(p, caption=f"n={kf.get('n','?')} t={kf['pts_time']:.1f}s", use_container_width=True)
                                     except Exception:
-                                        st.caption(f"n={kf.get('n','?')} t={kf['pts_time']:.1f}s")
+                                        st.caption(f"n={kf.get('n','?')} t={kf['pts_time']:.1f}s (image path unresolved)")
                     else:
                         st.warning(f"Temporal enrich failed: {resp.status_code} {resp.text}")
                 except Exception as e:

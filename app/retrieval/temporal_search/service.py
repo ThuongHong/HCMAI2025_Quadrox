@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from math import exp
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple, Any, Optional, Callable
+import os
+from pathlib import Path
+import logging
 
 from .io_map import KeyframeMap
 from .grouping import KF, cluster_keyframes_by_time
@@ -11,17 +14,61 @@ from .abts import Pivot, auto_temporal_window
 
 # Singleton-style map loader for reuse
 _KF_MAP: Optional[KeyframeMap] = None
+_Scorer: Optional[Callable[[str, List[Tuple[int, float, float]]], List[Tuple[int, float, float]]]] = None
+
+
+def register_temporal_scorer(fn: Callable[[str, List[Tuple[int, float, float]]], List[Tuple[int, float, float]]]):
+    """Optional: register a scorer to re-score neighborhood tuples with query similarity.
+
+    fn(video_id, [(frame_idx, pts_time, score_like)]) -> updated list with rescored 'score_like'.
+    """
+    global _Scorer
+    _Scorer = fn
+
+
+def _maybe_rescore(video_id: str, neigh: List[Tuple[int, float, float]]) -> List[Tuple[int, float, float]]:
+    global _Scorer
+    return _Scorer(video_id, neigh) if _Scorer else neigh
+
+
+def _resolve_map_root() -> Path:
+    """Resolve resources/map-keyframes path robustly across run contexts."""
+    # 1) Env var override
+    env_p = os.environ.get("MAP_KEYFRAMES_ROOT") or os.environ.get("MAP_KEYFRAMES_DIR")
+    if env_p:
+        p = Path(env_p)
+        if p.exists():
+            return p
+    # 2) Derive repo root from this file location: app/retrieval/temporal_search/service.py -> repo
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates = [
+        repo_root / "resources" / "map-keyframes",
+        Path.cwd() / "resources" / "map-keyframes",
+        Path.cwd().parent / "resources" / "map-keyframes",
+    ]
+    seen: set[str] = set()
+    uniq = []
+    for c in candidates:
+        s = str(c.resolve())
+        if s not in seen:
+            seen.add(s)
+            uniq.append(c)
+    for c in uniq:
+        if c.exists():
+            return c
+    # Fallback to repo-root default
+    return repo_root / "resources" / "map-keyframes"
 
 
 def _get_map() -> KeyframeMap:
     global _KF_MAP
     if _KF_MAP is None:
-        _KF_MAP = KeyframeMap(root="resources/map-keyframes")
+        _KF_MAP = KeyframeMap(root=_resolve_map_root())
     return _KF_MAP
 
 
-def video_id_from_nums(group_num: int, video_num: int) -> str:
-    return f"L{int(group_num):02d}_V{int(video_num):03d}"
+def video_id_from_nums(group_num: int, video_num: int, prefix: str = "L") -> str:
+    return f"{prefix}{int(group_num):02d}_V{int(video_num):03d}"
 
 
 def _fetch_neighborhood_scores(
@@ -112,6 +159,7 @@ def temporal_enrich(
         win = auto_temporal_window(
             pivot=Pivot(video_id=video_id, frame_idx=frame_idx, pts_time=pts_time, score=pivot_score),
             neighborhood_fetch=lambda vid, l, r: _fetch_neighborhood_scores(vid, l, r, pts_time),
+            normalize=lambda arr: _maybe_rescore(video_id, arr),
             init_delta=5.0,
             max_delta=20.0,
             step=2.5,
@@ -155,6 +203,21 @@ def temporal_enrich(
                 }
             )
 
+    # Logging telemetry
+    try:
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"TemporalEnrich mode={mode} pivot=({video_id}, fi={frame_idx}, t={pts_time:.3f}) window=({t_left:.3f},{t_right:.3f}) clusters={sum(len(v) for v in clusters.values())}"
+        )
+        for vid, cs in clusters.items():
+            for c in cs:
+                rep = c.representative
+                logger.info(
+                    f"  {vid}: [{c.start_time:.2f},{c.end_time:.2f}] rep(n={rep.n}, fi={rep.frame_idx}, t={rep.pts_time:.2f}, s={rep.score})"
+                )
+    except Exception:
+        pass
+
     return {
         "mode": mode,
         "pivot": {
@@ -166,4 +229,3 @@ def temporal_enrich(
         "window": {"start_time": t_left, "end_time": t_right},
         "clusters": out_clusters,
     }
-
