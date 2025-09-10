@@ -128,11 +128,17 @@ cd gui
 streamlit run main.py
 ```
 
+**Tab 3 - Keyframe Gallery**
+```bash
+cd gui
+streamlit run gallery.py
+```
+
 ## 📝 License
 
 This project is part of the HCMAI2025 competition.
 
-## Temporal Search (beta)
+<!-- ## Temporal Search (beta)
 
 We added opt-in Temporal Search to improve KIS/TRAKE metrics without changing existing behavior.
 
@@ -158,4 +164,4 @@ Environment:
 Optional:
 - You may register a custom temporal scorer to mix quick query similarity into ABTS edge confidence:
   - `from app.retrieval.temporal_search.service import register_temporal_scorer`
-  - `register_temporal_scorer(fn)` where `fn(video_id, [(frame_idx, pts_time, score_like)]) -> rescored list`
+  - `register_temporal_scorer(fn)` where `fn(video_id, [(frame_idx, pts_time, score_like)]) -> rescored list` -->
