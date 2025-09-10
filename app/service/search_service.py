@@ -436,8 +436,10 @@ class KeyframeQueryService:
           - best_query_for: mapping stable_key -> query index (qi) where candidate achieved max base score
 
         Fusion modes:
-          - "rrf": Reciprocal Rank Fusion, ignores weights; tie-break by max base score
-          - "max": Max of base scores across queries, ignores weights
+          - "rrf": Reciprocal Rank Fusion (w=1.0); tie-break by max base score
+          - "weighted_rrf": Weighted RRF with weights clamped to [0.4, 1.0]
+          - "max": Max of base scores across queries (no weighting)
+          - "max_weighted": Max of (weight * base score) with weights in [0.4, 1.0]
         """
         assert len(embeddings) == len(weights)
 
@@ -473,22 +475,58 @@ class KeyframeQueryService:
         best_query_for: dict[str, int] = {}
         fused: dict[str, list] = {}
 
-        if fusion == "rrf":
+        if fusion in ("rrf", "weighted_rrf"):
+            # Reciprocal Rank Fusion (RRF) and its weighted variant
+            # Why: RRF is robust for ensembling rankings; weights prioritize better variants
             K = 60
             for qi, res in enumerate(per_query_results):
+                # Normalize incoming weights defensively to [0.4, 1.0]
+                try:
+                    w_raw = float(weights[qi]) if qi < len(weights) else 1.0
+                except Exception:
+                    w_raw = 1.0
+                w = max(0.4, min(1.0, w_raw)) if fusion == "weighted_rrf" else 1.0
                 for rank, (cand, score) in enumerate(res, start=1):
                     skey = self._stable_key(cand)
-                    cur = fused.setdefault(skey, [cand, 0.0, 0.0])  # [obj, fused_rrf, max_base]
-                    # RRF ignores provided weights to avoid biasing by query count
-                    cur[1] += (1.0 / (K + rank))
+                    cur = fused.setdefault(skey, [cand, 0.0, 0.0, -1])  # [obj, rrf, max_base, best_qi]
+                    cur[1] += w * (1.0 / (K + rank))  # weighted or plain RRF
                     if score > cur[2]:
                         cur[2] = score
+                        cur[3] = qi
+                        best_query_for[skey] = qi
+            # Sort by fused RRF score, tie-break by max base score
+            out = sorted(fused.values(), key=lambda x: (x[1], x[2]), reverse=True)
+            mode = "WEIGHTED_RRF" if fusion == "weighted_rrf" else "RRF"
+            logger.debug(
+                f"Fusion={mode}, K={K}, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}"
+            )
+            return [(obj, _fscore) for obj, _fscore, _, _ in out[:top_k]], best_query_for
+
+        # MAX and MAX_WEIGHTED fusions
+        if fusion in ("max", "max_weighted"):
+            for qi, res in enumerate(per_query_results):
+                try:
+                    w_raw = float(weights[qi]) if qi < len(weights) else 1.0
+                except Exception:
+                    w_raw = 1.0
+                w = max(0.4, min(1.0, w_raw)) if fusion == "max_weighted" else 1.0
+                for cand, score in res:
+                    skey = self._stable_key(cand)
+                    weighted_score = w * score
+                    cur = fused.setdefault(skey, [cand, 0.0, 0.0, -1])  # [obj, fused, max_base, best_qi]
+                    if weighted_score > cur[1]:
+                        cur[1] = weighted_score
+                        cur[2] = max(cur[2], score)
+                        cur[3] = qi
                         best_query_for[skey] = qi
             out = sorted(fused.values(), key=lambda x: (x[1], x[2]), reverse=True)
-            logger.debug(f"Fusion=RRF, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
-            return [(obj, _fscore) for obj, _fscore, _ in out[:top_k]], best_query_for
+            mode = "MAX_WEIGHTED" if fusion == "max_weighted" else "MAX"
+            logger.debug(
+                f"Fusion={mode}, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}"
+            )
+            return [(obj, sc) for obj, sc, _, _ in out[:top_k]], best_query_for
 
-        # MAX fusion: use max base score only (no weighting)
+        # Default fallback (for any unrecognized fusion): behave like MAX
         for qi, res in enumerate(per_query_results):
             for cand, score in res:
                 skey = self._stable_key(cand)
@@ -497,7 +535,7 @@ class KeyframeQueryService:
                     cur[1] = score
                     best_query_for[skey] = qi
         out = sorted(fused.values(), key=lambda x: x[1], reverse=True)
-        logger.debug(f"Fusion=MAX, queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
+        logger.debug(f"Fusion=MAX(FALLBACK), queries={len(embeddings)}, candidates={sum(len(r) for r in per_query_results)} -> fused={len(out)}")
         return [(obj, sc) for obj, sc in out[:top_k]], best_query_for
 
     async def _refine_query(self, query: str, llm=None, visual_extractor=None) -> tuple[str, list[str]]:

@@ -1,6 +1,7 @@
 from schema.request import MetadataFilter, ObjectFilter
 # Agent
 from agent.agent import VisualEventExtractor
+from agent.agent import _preserve_verbatim_quoted, _restore_verbatim_tokens
 from llama_index.core.llms import LLM
 
 from schema.response import KeyframeServiceReponse
@@ -8,6 +9,7 @@ from service import ModelService, KeyframeQueryService
 from pathlib import Path
 import json
 from typing import Optional, Dict, Any
+import time
 # Import rerank components
 from retrieval.rerank import RerankPipeline, RerankOptions
 from core.settings import RerankSettings, AppSettings
@@ -82,8 +84,34 @@ class QueryController:
         )
         return out
 
+    def _clip_limit_text(self, text: str, max_tokens: int = 75) -> str:
+        """Approximate CLIP text length guard (~77 tokens limit).
+        Why: CLIP ViT-B/32 caps ~77 tokens; truncate to keep core visual terms.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+        # Crude tokenization by whitespace; keeps quotes/verbatim intact
+        parts = text.strip().split()
+        if len(parts) <= max_tokens:
+            return text.strip()
+        return " ".join(parts[:max_tokens]).strip()
+
     def _embedding_for_query(self, text: str):
-        return self.model_service.embedding(self._normalize_for_embedding(text)).tolist()[0]
+        limited = self._clip_limit_text(text)
+        return self.model_service.embedding(self._normalize_for_embedding(limited)).tolist()[0]
+
+    def _ensure_english_or_warn(self, text: str) -> str:
+        """No-op safety: log if looks non-English, but do not call LLM here.
+        Rationale: agent already produces English; avoid async LLM in sync path.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+        non_ascii = sum(1 for ch in text if ord(ch) > 127 and ch not in ("“", "”"))
+        # Override to robust check; include all non-ASCII chars
+        non_ascii = sum(1 for ch in text if ord(ch) > 127)
+        if non_ascii > 0:
+            logger.warning("Text may be non-English; relying on agent's English refine.")
+        return text
 
     def convert_model_to_path(
         self,
@@ -244,7 +272,11 @@ class QueryController:
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
+        # English-first safeguard for embedding
+        selected_query = self._ensure_english_or_warn(selected_query)
         # Variant selection: keep only strong ones (score >= 7.5), capped by config
         queries = [selected_query]
         weights = [1.0]
@@ -254,9 +286,18 @@ class QueryController:
             for v in vv:
                 qv = v.get("query")
                 if qv:
-                    queries.append(qv)
-                    weights.append(1.0)
-        logger.info(f"QExp enabled: queries={len(queries)} (kept_variants={len(queries)-1}), fusion={qexp['fusion']}")
+                    q_en = self._ensure_english_or_warn(qv)
+                    queries.append(q_en)
+                    # Map LLM score (0..10) to [0.4, 1.0]
+                    try:
+                        s = float(v.get("score", 0.0))
+                    except Exception:
+                        s = 0.0
+                    w = 0.4 + 0.6 * max(0.0, min(1.0, s / 10.0))
+                    weights.append(w)
+        logger.info(
+            f"QExp enabled: fusion={qexp['fusion']}, n_variants={max(0, len(queries)-1)}"
+        )
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
             initial_top_k = max(top_k, rerank_options.sg_top_m)
@@ -264,6 +305,7 @@ class QueryController:
         embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
+        t_sf0 = time.perf_counter()
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
@@ -271,6 +313,17 @@ class QueryController:
             score_threshold=score_threshold,
             fusion=qexp["fusion"],
         )
+        t_searchfuse = time.perf_counter() - t_sf0
+        # Quick QA: distribution of best_query_for among top-K
+        try:
+            top_keys = {self._stable_key(kf) for kf, _ in result[:top_k]}
+            dist: dict[int, int] = {}
+            for k in top_keys:
+                if k in best_qmap:
+                    dist[best_qmap[k]] = dist.get(best_qmap[k], 0) + 1
+            logger.debug(f"best_query_for distribution (top-{top_k}): {dist}")
+        except Exception:
+            pass
         # Soft object boost (configurable), skip if generic-only or explicit filter present
         cfg = AppSettings()
         GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
@@ -286,6 +339,7 @@ class QueryController:
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
             logger.debug(f"Object boost applied: targets={len(target)}, candidates={before_n}")
+        t_sg0 = time.perf_counter()
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
@@ -301,6 +355,8 @@ class QueryController:
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
             except Exception as e:
                 logger.error(f"Reranking failed, using fused results: {e}")
+        t_sg = time.perf_counter() - t_sg0 if (rerank_options and rerank_options.enable) else 0.0
+        logger.debug(f"timings {qexp['fusion']} { { 'qexp': round(t_qexp,3), 'search+fuse': round(t_searchfuse,3), 'sg': round(t_sg,3) } }, per_query_k={per_query_k}")
         return result[:top_k]
 
     async def search_text_with_exlude_group(
@@ -349,7 +405,10 @@ class QueryController:
         rerank_options = None
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
+        selected_query = self._ensure_english_or_warn(selected_query)
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
@@ -358,8 +417,14 @@ class QueryController:
             for v in vv:
                 qv = v.get("query")
                 if qv:
-                    queries.append(qv)
-                    weights.append(1.0)
+                    q_en = self._ensure_english_or_warn(qv)
+                    queries.append(q_en)
+                    try:
+                        s = float(v.get("score", 0.0))
+                    except Exception:
+                        s = 0.0
+                    w = 0.4 + 0.6 * max(0.0, min(1.0, s / 10.0))
+                    weights.append(w)
         logger.info(f"QExp enabled (exclude groups): queries={len(queries)}, fusion={qexp['fusion']}")
 
         initial_top_k = top_k
@@ -370,6 +435,9 @@ class QueryController:
         embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
+        t_sf0 = time.perf_counter()
+        t_sf0 = time.perf_counter()
+        t_sf0 = time.perf_counter()
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
@@ -378,6 +446,18 @@ class QueryController:
             fusion=qexp["fusion"],
             exclude_ids=exclude_ids,
         )
+        t_searchfuse = time.perf_counter() - t_sf0
+        t_searchfuse = time.perf_counter() - t_sf0
+        t_searchfuse = time.perf_counter() - t_sf0
+        try:
+            top_keys = {self._stable_key(kf) for kf, _ in result[:top_k]}
+            dist: dict[int, int] = {}
+            for k in top_keys:
+                if k in best_qmap:
+                    dist[best_qmap[k]] = dist.get(best_qmap[k], 0) + 1
+            logger.debug(f"best_query_for distribution (top-{top_k}, excl): {dist}")
+        except Exception:
+            pass
 
         cfg = AppSettings()
         GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
@@ -451,7 +531,10 @@ class QueryController:
             rerank_options = self._build_rerank_options(rerank_params)
         qexp = self._get_qexp_params(rerank_params or {})
 
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
+        selected_query = self._ensure_english_or_warn(selected_query)
         queries = [selected_query]
         weights = [1.0]
         if qexp["enable"] and variants:
@@ -460,8 +543,14 @@ class QueryController:
             for v in vv:
                 qv = v.get("query")
                 if qv:
-                    queries.append(qv)
-                    weights.append(1.0)
+                    q_en = self._ensure_english_or_warn(qv)
+                    queries.append(q_en)
+                    try:
+                        s = float(v.get("score", 0.0))
+                    except Exception:
+                        s = 0.0
+                    w = 0.4 + 0.6 * max(0.0, min(1.0, s / 10.0))
+                    weights.append(w)
         logger.info(f"QExp enabled (selected groups/videos): queries={len(queries)}, fusion={qexp['fusion']}")
 
         initial_top_k = top_k
@@ -480,6 +569,15 @@ class QueryController:
             fusion=qexp["fusion"],
             exclude_ids=exclude_ids,
         )
+        try:
+            top_keys = {self._stable_key(kf) for kf, _ in result[:top_k]}
+            dist: dict[int, int] = {}
+            for k in top_keys:
+                if k in best_qmap:
+                    dist[best_qmap[k]] = dist.get(best_qmap[k], 0) + 1
+            logger.debug(f"best_query_for distribution (top-{top_k}, sel): {dist}")
+        except Exception:
+            pass
 
         cfg = AppSettings()
         GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
@@ -494,6 +592,7 @@ class QueryController:
                 boosted.append((kf, sc + bonus))
             result = sorted(boosted, key=lambda x: x[1], reverse=True)
 
+        t_sg0 = time.perf_counter()
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
@@ -509,6 +608,12 @@ class QueryController:
                 result = [(c, orig_map.get(id(c), 0.5)) for c in reranked_candidates]
             except Exception as e:
                 logger.error(f"Reranking failed: {e}")
+        t_sg = time.perf_counter() - t_sg0 if (rerank_options and rerank_options.enable) else 0.0
+        try:
+            logger.debug(f"timings (selected groups/videos) {qexp['fusion']} {{ 'qexp': {round(t_qexp,3)}, 'search+fuse': {round(t_searchfuse,3)}, 'sg': {round(t_sg,3)} }}, per_query_k={per_query_k}")
+        except NameError:
+            # If t_qexp missing due to earlier exception, skip detailed timing
+            logger.debug(f"timings (selected groups/videos) {qexp['fusion']} (partial timings)")
 
         return result[:top_k]
 
@@ -568,7 +673,10 @@ class QueryController:
         if rerank_params:
             rerank_options = self._build_rerank_options(rerank_params)
         qexp = self._get_qexp_params(rerank_params or {})
+        t_q0 = time.perf_counter()
         selected_query, obj_list, variants = await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+        t_qexp = time.perf_counter() - t_q0
+        selected_query = self._ensure_english_or_warn(selected_query)
 
         # Convert MetadataFilter to dict format for the service
         metadata_dict = None
@@ -622,8 +730,14 @@ class QueryController:
             vv = [v for v in vv if (v.get("score") or 0.0) >= 7.5][: qexp["top_variants"]]
             for v in vv:
                 if v.get("query"):
-                    queries.append(v.get("query"))
-                    weights.append(1.0)
+                    q_en = self._ensure_english_or_warn(v.get("query"))
+                    queries.append(q_en)
+                    try:
+                        s = float(v.get("score", 0.0))
+                    except Exception:
+                        s = 0.0
+                    w = 0.4 + 0.6 * max(0.0, min(1.0, s / 10.0))
+                    weights.append(w)
 
         initial_top_k = top_k
         if rerank_options and rerank_options.enable:
@@ -633,6 +747,7 @@ class QueryController:
         embeddings = [self._embedding_for_query(q) for q in queries]
         if qexp["fusion"] == "rrf":
             weights = [1.0] * len(queries)
+        t_sf0 = time.perf_counter()
         result, best_qmap = await self.keyframe_service.search_multi_and_fuse(
             embeddings=embeddings,
             weights=weights,
@@ -642,6 +757,16 @@ class QueryController:
             metadata_filter=metadata_dict,
             object_filter=object_dict,
         )
+        t_searchfuse = time.perf_counter() - t_sf0
+        try:
+            top_keys = {self._stable_key(kf) for kf, _ in result[:top_k]}
+            dist: dict[int, int] = {}
+            for k in top_keys:
+                if k in best_qmap:
+                    dist[best_qmap[k]] = dist.get(best_qmap[k], 0) + 1
+            logger.debug(f"best_query_for distribution (top-{top_k}, meta): {dist}")
+        except Exception:
+            pass
         # Optional object soft-boost only if no explicit object_filter
         cfg = AppSettings()
         GENERIC = {o.lower() for o in getattr(cfg, 'QEXP_OBJECT_GENERIC', {"person","people","man","woman","car","chair","table","phone","laptop","tv"})}
@@ -659,6 +784,7 @@ class QueryController:
             logger.debug(f"Object boost applied (metadata-filter): targets={len(target)}, candidates={before_n}")
 
         # Apply reranking if enabled
+        t_sg0 = time.perf_counter()
         if rerank_options and rerank_options.enable and result:
             try:
                 candidates = [item[0] for item in result]
@@ -678,6 +804,8 @@ class QueryController:
 
             except Exception as e:
                 logger.error(f"Reranking failed: {e}")
+        t_sg = time.perf_counter() - t_sg0 if (rerank_options and rerank_options.enable) else 0.0
+        logger.debug(f"timings (metadata-filter) {qexp['fusion']} { { 'qexp': round(t_qexp,3), 'search+fuse': round(t_searchfuse,3), 'sg': round(t_sg,3) } }, per_query_k={per_query_k}")
 
         return result[:top_k]
 
@@ -771,3 +899,5 @@ class QueryController:
         translate + enhance
         """
         return await self.keyframe_service._refine_query_qexp(query, self.llm, self.visual_extractor)
+
+
