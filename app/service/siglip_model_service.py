@@ -31,15 +31,41 @@ class SigLIPModelService:
         Returns:
             numpy array with shape (1, embedding_dim)
         """
-        with torch.no_grad():
-            inputs = self.processor(text=[query_text], return_tensors="pt", padding=True)
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        try:
+            # Clear any cached state
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             
-            text_features = self.model.get_text_features(**inputs)
-            # Normalize embeddings
-            text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-            
-            return text_features.cpu().detach().numpy().astype(np.float32)
+            with torch.no_grad():
+                # Process with clean state - force no padding and truncation
+                inputs = self.processor(
+                    text=[query_text], 
+                    return_tensors="pt", 
+                    padding=False,  # Disable padding to avoid token accumulation
+                    truncation=True,  # Enable truncation for safety
+                    max_length=64     # SigLIP max sequence length
+                )
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                # Debug log
+                seq_len = inputs['input_ids'].shape[1]
+                print(f"🔍 DEBUG - Query: '{query_text[:50]}...' -> {seq_len} tokens")
+                
+                text_features = self.model.get_text_features(**inputs)
+                # Normalize embeddings
+                text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+                
+                # Clean up inputs to prevent memory leaks
+                del inputs
+                
+                return text_features.cpu().detach().numpy().astype(np.float32)
+                
+        except Exception as e:
+            print(f"❌ SigLIP embedding error: {e}")
+            # Clear any partial state on error
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise
     
     def image_embedding(self, image: Union[Image.Image, str]) -> np.ndarray:
         """
@@ -52,15 +78,30 @@ class SigLIPModelService:
         if isinstance(image, str):
             image = Image.open(image).convert('RGB')
         
-        with torch.no_grad():
-            inputs = self.processor(images=[image], return_tensors="pt", padding=True)
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            image_features = self.model.get_image_features(**inputs)
-            # Normalize embeddings
-            image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-            
-            return image_features.cpu().detach().numpy().astype(np.float32)
+        try:
+            # Clear any cached state
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+            with torch.no_grad():
+                inputs = self.processor(images=[image], return_tensors="pt", padding=False)
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                image_features = self.model.get_image_features(**inputs)
+                # Normalize embeddings
+                image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+                
+                # Clean up inputs
+                del inputs
+                
+                return image_features.cpu().detach().numpy().astype(np.float32)
+                
+        except Exception as e:
+            print(f"❌ SigLIP image embedding error: {e}")
+            # Clear any partial state on error
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise
     
     def get_embedding_dim(self) -> int:
         """
