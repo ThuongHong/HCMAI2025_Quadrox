@@ -12,10 +12,11 @@ sys.path.insert(0, ROOT_DIR)
 
 from repository.mongo import KeyframeRepository
 from repository.milvus import KeyframeVectorRepository
-from service import KeyframeQueryService, ModelService
+from service import KeyframeQueryService, ModelService, SigLIPModelService
 from models.keyframe import Keyframe
 import open_clip
 from pymilvus import connections, Collection as MilvusCollection
+import os
 
 
 class ServiceFactory:
@@ -30,6 +31,8 @@ class ServiceFactory:
         model_name: str ,
         use_pretrained: bool,
         pretrained_name: str,
+        use_siglip: bool = False,  # New parameter to switch to SigLIP
+        siglip_model_path: str = "",  # Path to SigLIP model
         milvus_db_name: str = "default",
         milvus_alias: str = "default",
         mongo_collection=Keyframe,
@@ -46,7 +49,9 @@ class ServiceFactory:
             alias=milvus_alias
         )
 
-        self._model_service = self._init_model_service(model_name, use_pretrained, pretrained_name)
+        self._model_service = self._init_model_service(
+            model_name, use_pretrained, pretrained_name, use_siglip, siglip_model_path
+        )
 
         self._keyframe_query_service = KeyframeQueryService(
             keyframe_mongo_repo=self._mongo_keyframe_repo,
@@ -82,13 +87,23 @@ class ServiceFactory:
 
         return KeyframeVectorRepository(collection=collection, search_params=search_params)
 
-    def _init_model_service(self, model_name: str, use_pretrained: bool, pretrained_name: str):
-        if use_pretrained:
-            model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_name, force_quick_gelu=True)
+    def _init_model_service(self, model_name: str, use_pretrained: bool, pretrained_name: str, 
+                           use_siglip: bool = False, siglip_model_path: str = ""):
+        if use_siglip:
+            # Use SigLIP model
+            if not siglip_model_path:
+                # Default SigLIP model path
+                siglip_model_path = os.path.join(os.path.dirname(__file__), '../../models/siglip-so400m-patch14-384')
+            
+            return SigLIPModelService(model_path=siglip_model_path)
         else:
-            model, _, preprocess = open_clip.create_model_and_transforms(model_name)
-        tokenizer = open_clip.get_tokenizer(model_name)
-        return ModelService(model=model, preprocess=preprocess, tokenizer=tokenizer)
+            # Use original CLIP model  
+            if use_pretrained:
+                model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=pretrained_name, force_quick_gelu=True)
+            else:
+                model, _, preprocess = open_clip.create_model_and_transforms(model_name)
+            tokenizer = open_clip.get_tokenizer(model_name)
+            return ModelService(model=model, preprocess=preprocess, tokenizer=tokenizer)
 
     def get_mongo_keyframe_repo(self):
         return self._mongo_keyframe_repo

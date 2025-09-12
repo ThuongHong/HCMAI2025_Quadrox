@@ -71,7 +71,11 @@ class RerankSettings(BaseSettings):
 
 
 class AppSettings(BaseSettings):
-    # Model
+    # Model - Switch to SigLIP
+    USE_SIGLIP: bool = True  # Enable SigLIP instead of CLIP
+    SIGLIP_MODEL_PATH: str = str(REPO_ROOT / 'models' / 'siglip-so400m-patch14-384')
+    
+    # Legacy CLIP settings (kept for backward compatibility)
     MODEL_NAME: str = "ViT-B-32"
     USE_PRETRAINED: bool = True
     PRETRAINED_NAME: str = "openai"

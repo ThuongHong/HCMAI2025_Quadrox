@@ -3,7 +3,7 @@ SuperGlobal-only reranking pipeline.
 """
 
 import time
-from typing import List, Tuple, Any, Dict, Optional
+from typing import List, Tuple, Any, Dict, Optional, Union
 import logging
 
 from .options import RerankOptions
@@ -18,7 +18,7 @@ class RerankPipeline:
 
     def __init__(
         self,
-        model_service=None,
+        model_service: Optional[Union[Any, Any]] = None,  # Support both ModelService and SigLIPModelService
         cache_base_dir: str = "./cache",
     ):
         self.model_service = model_service

@@ -584,11 +584,11 @@ class KeyframeQueryService:
             # Restore any protected quoted substrings
             translated_text = _restore_verbatim_tokens(translated_text, _verb_map)
             refined_text = _restore_verbatim_tokens(refined_text, _verb_map)
-            logger.debug(
+            logger.info(
                 f"Query refined: '{query}' -> '{refined_text}' (translated: '{translated_text}')")
         except Exception:
             refined_text = query
-            logger.debug(
+            logger.info(
                 f"Query refinement failed, using original: '{refined_text}'")
 
         # Step 2: Optional object suggestions via VisualEventExtractor
@@ -599,7 +599,7 @@ class KeyframeQueryService:
                 refined_from_extractor = (
                     agent_resp.refined_query or refined_text).strip()
                 if refined_from_extractor != refined_text:
-                    logger.debug(
+                    logger.info(
                         f"Agent refined: '{refined_text}' -> '{refined_from_extractor}'")
                     refined_text = refined_from_extractor
                 objects = agent_resp.list_of_objects or []

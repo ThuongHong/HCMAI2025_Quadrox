@@ -214,6 +214,6 @@ data/
 /tests
 *.csv
 *.zip
-/models/clip-multilingual
+/models/siglip-so400m-patch14-384
 /models/Vintern-1B-v3_5
 /docs
