@@ -224,3 +224,6 @@ data/
 AGENTS.md
 /app/.github
 *.txt
+
+# OCR Database files
+ocr2_search.db
