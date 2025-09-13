@@ -73,7 +73,7 @@ class RerankSettings(BaseSettings):
 class AppSettings(BaseSettings):
     # Model - Switch to SigLIP
     USE_SIGLIP: bool = True  # Enable SigLIP instead of CLIP
-    SIGLIP_MODEL_PATH: str = str(REPO_ROOT / 'models' / 'siglip-so400m-patch14-384')
+    SIGLIP_MODEL_PATH: str = str(REPO_ROOT / 'models' / 'siglip2-so400m-patch14-384')
     
     # Legacy CLIP settings (kept for backward compatibility)
     MODEL_NAME: str = "ViT-B-32"
