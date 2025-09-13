@@ -6,7 +6,8 @@ from controller.agent_controller import AgentController
 from llama_index.llms.google_genai import GoogleGenAI
 from factory.factory import ServiceFactory
 from core.settings import KeyFrameIndexMilvusSetting, MongoDBSettings, AppSettings, RerankSettings
-from service import ModelService, KeyframeQueryService
+from service import ModelService, KeyframeQueryService, SigLIPModelService
+from typing import Union
 from controller.query_controller import QueryController
 from pathlib import Path
 from fastapi import Depends, Request, HTTPException
@@ -116,7 +117,7 @@ def get_agent_controller(
         top_k=50
     )
 
-def get_model_service(service_factory: ServiceFactory = Depends(get_service_factory)) -> ModelService:
+def get_model_service(service_factory: ServiceFactory = Depends(get_service_factory)) -> Union[ModelService, SigLIPModelService]:
     try:
         model_service = service_factory.get_model_service()
         if model_service is None:
@@ -195,7 +196,7 @@ def get_milvus_repository(service_factory: ServiceFactory = Depends(get_service_
 
 
 def get_query_controller(
-    model_service: ModelService = Depends(get_model_service),
+    model_service: Union[ModelService, SigLIPModelService] = Depends(get_model_service),
     keyframe_service: KeyframeQueryService = Depends(get_keyframe_service),
     app_settings: AppSettings = Depends(get_app_settings),
     rerank_settings: RerankSettings = Depends(get_rerank_settings)

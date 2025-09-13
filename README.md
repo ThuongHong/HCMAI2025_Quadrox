@@ -77,6 +77,20 @@ python migration/objects_migration.py --folder_path resources/objects
 python migration/index_caption_json.py
 ```
 
+. **Download model**
+
+
+#### Model chính (Vintern - cần authentication):
+```bash
+# Đăng nhập HuggingFace CLI
+huggingface-cli login --token <token>
+# hoặc
+hf login --token <token>
+
+# Download Vintern model
+hf download google/siglip2-so400m-patch14-384 --local-dir ./models/siglip2-so400m-patch14-384
+```
+
 <!-- 7. **Download model**
 
 

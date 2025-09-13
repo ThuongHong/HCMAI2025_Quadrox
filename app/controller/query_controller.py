@@ -5,10 +5,10 @@ from agent.agent import _preserve_verbatim_quoted, _restore_verbatim_tokens
 from llama_index.core.llms import LLM
 
 from schema.response import KeyframeServiceReponse
-from service import ModelService, KeyframeQueryService
+from service import ModelService, KeyframeQueryService, SigLIPModelService
 from pathlib import Path
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 import time
 # Import rerank components
 from retrieval.rerank import RerankPipeline, RerankOptions
@@ -33,7 +33,7 @@ class QueryController:
         self,
         data_folder: Path,
         id2index_path: Path,
-        model_service: ModelService,
+        model_service: Union[ModelService, SigLIPModelService],
         keyframe_service: KeyframeQueryService,
         llm: LLM,
         rerank_config: Optional[RerankSettings] = None,
@@ -63,25 +63,25 @@ class QueryController:
         if not isinstance(text, str) or not text:
             return text
         out = text
-        # Add "phrase " before ASCII double-quoted spans: "..."
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )("[^"]+")',
-            r'phrase \g<0>',
-            out,
-        )
-        # Add "phrase " before curly-quoted spans: “...”, ”...”
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])',
-            r'phrase \g<0>',
-            out,
-        )
-        # Add "phrase " before ASCII single-quoted spans: '\'...\''
-        # Avoid contractions/possessives by requiring no word-char immediately before the quote
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(?<!\w)(\'[^\']+\')',
-            r'phrase \g<0>',
-            out,
-        )
+        # # Add "phrase " before ASCII double-quoted spans: "..."
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )("[^"]+")',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
+        # # Add "phrase " before curly-quoted spans: “...”, ”...”
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
+        # # Add "phrase " before ASCII single-quoted spans: '\'...\''
+        # # Avoid contractions/possessives by requiring no word-char immediately before the quote
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(?<!\w)(\'[^\']+\')',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
         return out
 
     def _clip_limit_text(self, text: str, max_tokens: int = 75) -> str:

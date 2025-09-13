@@ -14,6 +14,8 @@ from .agent import VisualEventExtractor, AnswerGenerator
 
 from service.search_service import KeyframeQueryService
 from service.model_service import ModelService
+from service.siglip_model_service import SigLIPModelService
+from typing import Union
 from schema.response import KeyframeServiceReponse
 from core.logger import SimpleLogger
 
@@ -53,7 +55,7 @@ class KeyframeSearchAgent:
         self, 
         llm: LLM,
         keyframe_service: KeyframeQueryService,
-        model_service: ModelService,
+        model_service: Union[ModelService, SigLIPModelService],
         data_folder: str,
         objects_data: dict[str, list[str]],
         asr_data: dict[str, str | list[dict[str,str]]],

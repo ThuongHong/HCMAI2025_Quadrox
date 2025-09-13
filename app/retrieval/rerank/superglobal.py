@@ -2,7 +2,7 @@
 
 import time
 import numpy as np
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Optional, Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class SuperGlobalReranker:
     Implements lightweight reranking without requiring additional models.
     """
 
-    def __init__(self, model_service=None):
+    def __init__(self, model_service: Optional[Union[Any, Any]] = None):  # Support both ModelService and SigLIPModelService
         self.model_service = model_service
 
     def rerank(

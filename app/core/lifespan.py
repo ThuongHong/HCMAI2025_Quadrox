@@ -73,6 +73,8 @@ async def lifespan(app: FastAPI):
             model_name=appsetting.MODEL_NAME,
             use_pretrained=appsetting.USE_PRETRAINED,
             pretrained_name=appsetting.PRETRAINED_NAME,
+            use_siglip=appsetting.USE_SIGLIP,  # Enable SigLIP
+            siglip_model_path=appsetting.SIGLIP_MODEL_PATH,  # SigLIP model path
             mongo_collection=Keyframe
         )
         logger.info("Service factory initialized successfully")

@@ -1088,7 +1088,7 @@ with search_tab1:
                               max_value=200, value=200, key="text_top_k")
         with col_param2:
             score_threshold = st.slider(
-                "🎯 Min Score", min_value=0.0, max_value=1.0, value=0.2, step=0.1, key="text_threshold")
+                "🎯 Min Score", min_value=0.0, max_value=1.0, value=0.0, step=0.1, key="text_threshold")
 
     with col2:
         # Search mode selector
