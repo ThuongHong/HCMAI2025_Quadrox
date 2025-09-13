@@ -219,3 +219,8 @@ data/
 /docs
 /tests
 /app/cache
+/.vscode
+/.github
+AGENTS.md
+/app/.github
+*.txt
