@@ -228,3 +228,6 @@ data/
 /.github
 AGENTS.md
 /app/.github
+/models
+/models
+models/siglip2-so400m-patch14-384/model.safetensors
