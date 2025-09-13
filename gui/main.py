@@ -2516,13 +2516,27 @@ if st.session_state.search_results:
                 # Show Video URL if available
                 if 'watch_url' in result and result['watch_url']:
                     watch_url = result['watch_url']
-                    # Shorten URL for display
-                    if len(watch_url) > 50:
-                        display_url = watch_url[:47] + "..."
+                    
+                    # Add timestamp to YouTube URL if pts_time is available
+                    if result['pts_time'] is not None:
+                        # Check if it's a YouTube URL
+                        if 'youtube.com/watch' in watch_url or 'youtu.be/' in watch_url:
+                            # Add timestamp parameter
+                            separator = '&' if '?' in watch_url else '?'
+                            timestamped_url = f"{watch_url}{separator}t={int(result['pts_time'])}s"
+                        else:
+                            timestamped_url = watch_url
                     else:
-                        display_url = watch_url
+                        timestamped_url = watch_url
+                    
+                    # Shorten URL for display
+                    if len(timestamped_url) > 50:
+                        display_url = timestamped_url[:47] + "..."
+                    else:
+                        display_url = timestamped_url
+                    
                     metadata_parts.append(
-                        f"<strong>🔗 Video:</strong> <a href='{watch_url}' target='_blank'>{display_url}</a>")
+                        f"<strong>🔗 Video:</strong> <a href='{timestamped_url}' target='_blank'>{display_url}</a>")
 
                 # Show detected objects if available
                 if 'objects' in result and result['objects']:
