@@ -21,7 +21,6 @@ def preprocess_query_siglip2_en(q: str) -> str:
     - Unicode NFC, collapse whitespace
     - Drop enumeration prefixes and control/temporal scaffolding
     - Convert dashes/semicolons to commas (CLIP-style descriptors)
-    - Preserve quoted text; add 'text "<...>"' hint (max 2 items)
     - Lowercase at the end
     - Keep it concise; true truncation handled by tokenizer (max_length=64)
     """
@@ -50,16 +49,16 @@ def preprocess_query_siglip2_en(q: str) -> str:
     q = re.sub(r"\s+", " ", q).strip()
     q = re.sub(r"^[, ]+|[, ]+$", "", q)
 
-    # 5) Preserve quoted text and add a light OCR hint (max 2)
-    #   Covers “smart quotes”, ASCII quotes, single quotes
-    quoted = re.findall(r"“([^”]+)”|\"([^\"]+)\"|‘([^’]+)’|'([^']+)'", q)
-    texts = [t for grp in quoted for t in grp if t]
-    for t in texts[:2]:
-        t_clean = re.sub(r"\s+", " ", t.strip())
-        if t_clean:
-            # If not already present as text "...", append one hint
-            if f'text "{t_clean}"' not in q.lower():
-                q += f', text "{t_clean}"'
+    # # 5) Preserve quoted text and add a light OCR hint (max 2)
+    # #   Covers “smart quotes”, ASCII quotes, single quotes
+    # quoted = re.findall(r"“([^”]+)”|\"([^\"]+)\"|‘([^’]+)’|'([^']+)'", q)
+    # texts = [t for grp in quoted for t in grp if t]
+    # for t in texts[:2]:
+    #     t_clean = re.sub(r"\s+", " ", t.strip())
+    #     if t_clean:
+    #         # If not already present as text "...", append one hint
+    #         if f'text "{t_clean}"' not in q.lower():
+    #             q += f', text "{t_clean}"'
 
     # 6) Lowercase last (SigLIP2 trained with lowercase text)
     q = q.lower()
@@ -88,8 +87,23 @@ class SigLIPModelService:
         self.model_path = model_path
         
         # Load SigLIP2 model and processor
-        self.processor = AutoProcessor.from_pretrained(model_path)
-        self.model = AutoModel.from_pretrained(model_path).to(self.device)
+        # 1) bật fast processor nếu có; an toàn vì sẽ fallback khi không hỗ trợ
+        self.processor = AutoProcessor.from_pretrained(self.model_path, use_fast=True)
+
+        # 2) dtype + SDPA: tiết kiệm VRAM trên GPU; trên CPU sẽ tự về float32
+        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        try:
+            self.model = AutoModel.from_pretrained(
+                self.model_path,
+                torch_dtype=dtype,
+                attn_implementation="sdpa",  # PyTorch SDPA: mem-efficient attention
+            ).to(self.device)
+        except TypeError:
+            # transformers cũ không có tham số attn_implementation
+            self.model = AutoModel.from_pretrained(
+                self.model_path, torch_dtype=dtype
+            ).to(self.device)
+
         self.model.eval()
         
         print(f"SigLIP2 model loaded from {model_path} on {self.device}")
@@ -121,11 +135,15 @@ class SigLIPModelService:
                 )
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}      
                 
-                # Debug log
-                seq_len = inputs['input_ids'].shape[1]
-                print(f"🔍 DEBUG - Query: '{query_text[:50]}...' -> {seq_len} tokens")
+                # Mixed precision
+                if torch.cuda.is_available():
+                    with torch.cuda.amp.autocast(dtype=torch.float16):
+                        text_features = self.model.get_text_features(**inputs)
+                else:
+                    text_features = self.model.get_text_features(**inputs)
                 
-                text_features = self.model.get_text_features(**inputs)
+                text_features = torch.nn.functional.normalize(text_features.float(), dim=-1)
+                
                 # Normalize embeddings
                 text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
                 
