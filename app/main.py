@@ -1,6 +1,11 @@
 from core.logger import SimpleLogger
 from core.lifespan import lifespan
 from router import keyframe_api, agent_api
+from core.settings import AppSettings
+try:
+    from router import caption_api
+except Exception:
+    caption_api = None
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.responses import JSONResponse
@@ -76,6 +81,14 @@ app.add_middleware(
 
 app.include_router(keyframe_api.router, prefix="/api/v1")
 app.include_router(agent_api.router, prefix='/api/v1')
+
+# Feature-flagged: Caption Search API
+try:
+    _app_settings = AppSettings()
+    if getattr(_app_settings, 'CAPTION_SEARCH_ENABLED', False) and caption_api is not None:
+        app.include_router(caption_api.router, prefix='/api/v1')
+except Exception:
+    pass
 
 
 @app.get("/", tags=["root"])

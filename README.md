@@ -72,6 +72,9 @@ python migration/metadata_migration.py --folder_path resources/metadata
 
 # Migrate object detection data
 python migration/objects_migration.py --folder_path resources/objects
+
+#Index captions
+python migration/index_caption_json.py
 ```
 
 <!-- 7. **Download model**
@@ -165,3 +168,31 @@ Optional:
 - You may register a custom temporal scorer to mix quick query similarity into ABTS edge confidence:
   - `from app.retrieval.temporal_search.service import register_temporal_scorer`
   - `register_temporal_scorer(fn)` where `fn(video_id, [(frame_idx, pts_time, score_like)]) -> rescored list` -->
+
+<!-- ## Caption Search (beta)
+
+Hybrid (BM25 + dense) caption retrieval from external caption JSONs. Safe and isolated from existing search modes.
+
+Index captions:
+
+```bash
+python tools/index_caption_json.py
+```
+
+Artifacts:
+- Parquet meta: `resources/captions/captions_meta.parquet`
+- BM25 pickle: `resources/captions/captions_bm25.pkl`
+- Milvus collection: `caption_text_v1` (optional upsert)
+
+Config in `app/core/settings.py` (AppSettings):
+- `CAPTION_SEARCH_ENABLED=True`
+- `CAPTION_META_PARQUET=resources/captions/captions_meta.parquet`
+- `CAPTION_BM25_PKL=resources/captions/captions_bm25.pkl`
+- `CAPTION_MILVUS_COLLECTION=caption_text_v1`
+
+API:
+- `GET /api/v1/caption/enabled`
+- `POST /api/v1/caption/search` with body `{query, top_k_dense, top_k_bm25, rrf_k, return_k}`
+
+GUI:
+- Streamlit adds a collapsible panel "Caption Search (beta)" with query, Top K, neighbor strip ±N, and exact_like filter. -->

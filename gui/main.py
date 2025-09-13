@@ -1200,6 +1200,72 @@ with search_tab1:
                 st.warning(
                     "⚠️ No valid video names found. Use format like: L21_V026")
 
+# Handle Caption Search mode (in-dropdown)
+    elif search_mode == "Caption Search (beta)":
+        # Dedicated UI and pipeline for external caption retrieval (hybrid RRF)
+        st.markdown("---")
+        st.markdown("### 📝 Caption Search (beta)")
+        st.caption("Ảnh minh hoạ có thể lệch so với khung hình gốc (khác bộ keyframe).")
+        api_base = st.session_state.get('api_base_url', 'http://localhost:8000')
+        colc1, colc2 = st.columns([2, 1])
+        with colc1:
+            cap_query = st.text_input("Query (captions)", key="cap_query",
+                                      placeholder="e.g., 'a red sports car on a city street'")
+            cap_return_k = st.slider("Top K", min_value=10, max_value=300, value=100, step=10, key="cap_return_k")
+        with colc2:
+            neighbor_n = st.slider("Neighbor strip ±N", min_value=0, max_value=6, value=2, step=1, key="cap_neighbor")
+            only_exact = st.checkbox("Only exact_like", value=False, key="cap_exact")
+
+        st.markdown("**✅ Enable Caption Search**")
+        if st.checkbox("Enable Caption Search", value=False, key="cap_enable") and st.button("Search Captions", type="primary", key="cap_search_btn_mode"):
+            try:
+                payload = {
+                    "query": cap_query,
+                    "top_k_dense": 200,
+                    "top_k_bm25": 200,
+                    "rrf_k": 60,
+                    "return_k": int(cap_return_k),
+                }
+                resp = requests.post(f"{api_base}/api/v1/caption/search", json=payload, timeout=30)
+                if resp.status_code != 200:
+                    st.error(f"Search failed: {resp.status_code} {resp.text}")
+                else:
+                    rows = resp.json() or []
+                    if only_exact:
+                        rows = [r for r in rows if str(r.get('mapped_status')) == 'exact_like']
+                    st.markdown("| Rank | Group | Video | Score | Status | n | FrameIdx | Caption | Thumb |\n|---:|---|---|---:|---|---:|---:|---|---|")
+                    for i, r in enumerate(rows, start=1):
+                        g = r.get('group'); v = r.get('video'); sc = float(r.get('score') or 0.0)
+                        stt = r.get('mapped_status'); n = r.get('mapped_n'); fidx = r.get('mapped_frame_idx')
+                        cap = r.get('caption') or ''; img = r.get('image_url')
+                        cap_short = (cap[:120] + '...') if len(cap) > 120 else cap
+                        thumb = f"<img src='{img}' width='96'/>" if img else ''
+                        st.markdown(f"| {i} | {g} | {v} | {sc:.3f} | {stt} | {n if n is not None else ''} | {fidx if fidx is not None else ''} | {cap_short} | {thumb} |", unsafe_allow_html=True)
+
+                        with st.expander(f"Open strip for {g}_{v} n={n}"):
+                            if img and n is not None:
+                                try:
+                                    root = img.replace('\\','/').rsplit('/',1)[0]
+                                    cols = st.columns(max(1, min(7, 2*int(neighbor_n)+1)))
+                                    k = 0
+                                    for dn in range(-int(neighbor_n), int(neighbor_n)+1):
+                                        p = f"{root}/{int(n)+dn:03d}.jpg"
+                                        with cols[k % len(cols)]:
+                                            try:
+                                                st.image(p, caption=f"n={int(n)+dn}")
+                                            except Exception:
+                                                st.caption(f"n={int(n)+dn} (image unavailable)")
+                                        k += 1
+                                except Exception:
+                                    st.caption("Strip unavailable for this item.")
+                            else:
+                                st.caption("No strip available for this item.")
+            except Exception as e:
+                st.error(f"Caption search error: {e}")
+
+        import streamlit as _st
+        _st.stop()
+
 # IMAGE SEARCH TAB
 with search_tab2:
     col1, col2 = st.columns([2, 1])
@@ -2666,10 +2732,83 @@ if st.session_state.search_results:
                 except Exception as e:
                     st.warning(f"Temporal enrich error: {e}")
 
+# Caption Search (beta) — hybrid BM25 + dense
+st.markdown("---")
+st.markdown("### 📝 Caption Search")
+with st.expander("🔍 Caption Search (beta)", expanded=False):
+    api_base = st.session_state.get('api_base_url', 'http://localhost:8000')
+    # Feature check
+    cap_enabled = True
+    try:
+        rr = requests.get(f"{api_base}/api/v1/caption/enabled", timeout=5)
+        cap_enabled = rr.status_code == 200 and bool(rr.json().get('enabled', False))
+    except Exception:
+        cap_enabled = False
+    if not cap_enabled:
+        st.info("Caption Search is disabled or unavailable on server.")
+    else:
+        cq = st.text_input("Query (captions)", key="cap_q", placeholder="e.g., 'a red sports car on a city street'")
+        colc1, colc2, colc3 = st.columns([1,1,1])
+        with colc1:
+            cap_k = st.number_input("Top K", min_value=10, max_value=300, value=100, step=10, key="cap_k")
+        with colc2:
+            neighbor_n = st.number_input("Neighbor strip ±N", min_value=0, max_value=6, value=2, step=1, key="cap_nb")
+        with colc3:
+            only_exact = st.checkbox("Only exact_like", value=False, key="cap_exact_only")
+
+        if st.button("Search Captions", type="primary", key="cap_search_btn"):
+            try:
+                payload = {
+                    "query": cq,
+                    "top_k_dense": 200,
+                    "top_k_bm25": 200,
+                    "rrf_k": 60,
+                    "return_k": int(cap_k),
+                }
+                resp = requests.post(f"{api_base}/api/v1/caption/search", json=payload, timeout=30)
+                if resp.status_code != 200:
+                    st.error(f"Search failed: {resp.status_code} {resp.text}")
+                else:
+                    rows = resp.json() or []
+                    if only_exact:
+                        rows = [r for r in rows if str(r.get('mapped_status')) == 'exact_like']
+                    st.caption("Beta: preview image may differ from original source keyframe set.")
+                    # Render table-like
+                    st.markdown("| Rank | Group | Video | Score | Status | n | FrameIdx | Caption | Thumb |\n|---:|---|---|---:|---|---:|---:|---|---|")
+                    for i, r in enumerate(rows, start=1):
+                        g = r.get('group'); v = r.get('video'); sc = float(r.get('score') or 0.0)
+                        stt = r.get('mapped_status'); n = r.get('mapped_n'); fidx = r.get('mapped_frame_idx')
+                        cap = r.get('caption') or ''; img = r.get('image_url')
+                        cap_short = (cap[:120] + '...') if len(cap) > 120 else cap
+                        thumb = f"<img src='{img}' width='96'/>" if img else ''
+                        st.markdown(f"| {i} | {g} | {v} | {sc:.3f} | {stt} | {n if n is not None else ''} | {fidx if fidx is not None else ''} | {cap_short} | {thumb} |", unsafe_allow_html=True)
+
+                        with st.expander(f"Open strip for {g}_{v} n={n}"):
+                            if img and n is not None:
+                                try:
+                                    root = img.replace('\\','/').rsplit('/',1)[0]
+                                    cols = st.columns(max(1, min(7, 2*int(neighbor_n)+1)))
+                                    k = 0
+                                    for dn in range(-int(neighbor_n), int(neighbor_n)+1):
+                                        p = f"{root}/{int(n)+dn:03d}.jpg"
+                                        with cols[k % len(cols)]:
+                                            try:
+                                                st.image(p, caption=f"n={int(n)+dn}")
+                                            except Exception:
+                                                st.caption(f"n={int(n)+dn} (image unavailable)")
+                                        k += 1
+                                except Exception:
+                                    st.caption("Strip unavailable for this item.")
+                            else:
+                                st.caption("No strip available for this item.")
+
+            except Exception as e:
+                st.error(f"Caption search error: {e}")
+
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
-    <p>🎥 Keyframe Search Application | Built with Streamlit</p>
+    <p>🎥 Keyframe Search Application</p>
 </div>
 """, unsafe_allow_html=True)

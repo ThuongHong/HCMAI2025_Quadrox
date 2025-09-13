@@ -83,6 +83,14 @@ class AppSettings(BaseSettings):
     # FRAME2OBJECT: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'detections.json')
     # ASR_PATH: str = str(REPO_ROOT / 'resources' / 'keyframes' / 'asr_proc.json')
 
+    # Caption Search (feature-flagged)
+    CAPTION_SEARCH_ENABLED: bool = True
+    CAPTION_META_PARQUET: str = str(REPO_ROOT / 'resources' / 'captions' / 'captions_meta.parquet')
+    CAPTION_BM25_PKL: str = str(REPO_ROOT / 'resources' / 'captions' / 'captions_bm25.pkl')
+    CAPTION_MILVUS_COLLECTION: str = 'caption_text_v1'
+    MAP_KEYFRAMES_DIR: str = str(REPO_ROOT / 'resources' / 'map-keyframes')
+    KEYFRAMES_DIR: str = str(REPO_ROOT / 'resources' / 'keyframes')
+
     # Query Expansion (QExp) feature flags
     QEXP_ENABLE: bool = Field(default=False)
     QEXP_MAX_VARIANTS: int = Field(default=3)
