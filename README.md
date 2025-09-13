@@ -73,7 +73,7 @@ python migration/metadata_migration.py --folder_path resources/metadata
 # Migrate object detection data
 python migration/objects_migration.py --folder_path resources/objects
 
-#Index captions
+# Index captions
 python migration/index_caption_json.py
 ```
 

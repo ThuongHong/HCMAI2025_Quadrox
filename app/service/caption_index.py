@@ -82,6 +82,11 @@ class CaptionIndex:
         connections.connect(alias=alias, **params)
         try:
             self._milvus_coll = Collection(self.app.CAPTION_MILVUS_COLLECTION, using=alias)
+            # Ensure collection is loaded for search to avoid "collection not loaded" errors
+            try:
+                self._milvus_coll.load()
+            except Exception:
+                pass
             self._milvus = connections
         except Exception as e:
             warnings.warn(f"Milvus caption collection missing or error: {e}")
@@ -127,6 +132,11 @@ class CaptionIndex:
         if self._milvus_coll is None:
             return []
         try:
+            # Best-effort load before search
+            try:
+                self._milvus_coll.load()
+            except Exception:
+                pass
             res = self._milvus_coll.search(
                 data=[qvec],
                 anns_field="embedding",
@@ -143,6 +153,29 @@ class CaptionIndex:
             out.sort(key=lambda x: x[1], reverse=True)
             return out
         except Exception as e:
+            # If collection wasn't loaded yet, try one more time after load
+            try:
+                if "collection not loaded" in str(e).lower():
+                    try:
+                        self._milvus_coll.load()
+                    except Exception:
+                        pass
+                    res = self._milvus_coll.search(
+                        data=[qvec],
+                        anns_field="embedding",
+                        param=self._milvus_search_params(),
+                        limit=int(top_k),
+                        output_fields=["id"],
+                        _async=False,
+                    )
+                    out: List[Tuple[int, float]] = []
+                    for hits in res:
+                        for h in hits:
+                            out.append((int(h.id), float(h.distance)))
+                    out.sort(key=lambda x: x[1], reverse=True)
+                    return out
+            except Exception:
+                pass
             logger.warning(f"Milvus caption search failed: {e}")
             return []
 
