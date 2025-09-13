@@ -204,13 +204,18 @@ __marimo__/
 
 data/
 /.cursor
-/resources/*
-!/resources/!.gitkeep
 /models/*
-!/models/!.gitkeep
-/preprocesse/*
-!/preprocesse/.gitkeep
+!/models/.gitkeep
+
+/output/*
+!/output/.gitkeep
+
+/preprocess/*
+!/preprocess/.gitkeep
+
+/resources/*
+!/resources/.gitkeep
+
 /docs
 /tests
 /app/cache
-/output
