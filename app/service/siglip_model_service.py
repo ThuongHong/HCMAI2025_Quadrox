@@ -4,7 +4,79 @@ from PIL import Image
 from transformers import AutoModel, AutoProcessor
 from typing import Union
 
+# ----- Text preprocessing for SigLIP2 -----
+import re
+import unicodedata
 
+# Common control/instruction words (English)
+_EN_INSTR = r"(?:please|kindly|find|search|retrieve|return|show|select|get|take|identify|detect|locate)"
+# Temporal/order scaffolding (English)
+_EN_TIME  = r"(?:first|second|third|next|then|finally|beginning|ending|start(?:ing)?|ends?|earliest|latest|initial|final)"
+# Enumeration prefixes like E1:, Scene 2:, Step-3:, (1), 1), 1.
+_ENUM_PAT = r"(?:(?:e|scene|step|shot|frame|moment|q|question)\s*[:#-]?\s*\d+|\(\d+\)|\d+\)|^\s*\d+\.)"
+
+def preprocess_query_siglip2_en(q: str) -> str:
+    """
+    Normalize an already-refined English query for SigLIP2 retrieval.
+    - Unicode NFC, collapse whitespace
+    - Drop enumeration prefixes and control/temporal scaffolding
+    - Convert dashes/semicolons to commas (CLIP-style descriptors)
+    - Preserve quoted text; add 'text "<...>"' hint (max 2 items)
+    - Lowercase at the end
+    - Keep it concise; true truncation handled by tokenizer (max_length=64)
+    """
+    if not q or not isinstance(q, str):
+        return ""
+
+    # 1) Unicode normalize + collapse newlines/whitespace
+    q = unicodedata.normalize("NFC", q)
+    q = re.sub(r"[\r\n]+", " ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+
+    # 2) Remove enumeration prefixes anywhere (E1:, Scene 2:, (1), 1) …)
+    q = re.sub(_ENUM_PAT, "", q, flags=re.IGNORECASE)
+
+    # 3) Convert separators -> comma
+    #   em-dash/en-dash/hyphen/bullets/semicolon -> comma
+    q = re.sub(r"\s*[–—\-•;]+\s*", ", ", q)
+
+    # 4) Remove leading instruction/temporal scaffolding terms (but keep nouns/verbs around them)
+    #   We only remove the "control word" tokens themselves; content words remain.
+    q = re.sub(rf"\b{_EN_INSTR}\b", "", q, flags=re.IGNORECASE)
+    q = re.sub(rf"\b{_EN_TIME}\b",   "", q, flags=re.IGNORECASE)
+
+    # Clean double commas/spaces from previous steps
+    q = re.sub(r"\s*,\s*,\s*", ", ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    q = re.sub(r"^[, ]+|[, ]+$", "", q)
+
+    # 5) Preserve quoted text and add a light OCR hint (max 2)
+    #   Covers “smart quotes”, ASCII quotes, single quotes
+    quoted = re.findall(r"“([^”]+)”|\"([^\"]+)\"|‘([^’]+)’|'([^']+)'", q)
+    texts = [t for grp in quoted for t in grp if t]
+    for t in texts[:2]:
+        t_clean = re.sub(r"\s+", " ", t.strip())
+        if t_clean:
+            # If not already present as text "...", append one hint
+            if f'text "{t_clean}"' not in q.lower():
+                q += f', text "{t_clean}"'
+
+    # 6) Lowercase last (SigLIP2 trained with lowercase text)
+    q = q.lower()
+
+    # 7) De-duplicate comma-separated descriptors while preserving order
+    parts = [p.strip() for p in q.split(",") if p.strip()]
+    seen = set()
+    dedup = []
+    for p in parts:
+        if p not in seen:
+            dedup.append(p)
+            seen.add(p)
+    q = ", ".join(dedup)
+
+    return q
+
+# ----- SigLIP2 Model Service -----
 class SigLIPModelService:
     def __init__(self, model_path: str):
         """
@@ -37,8 +109,9 @@ class SigLIPModelService:
             
             with torch.no_grad():
                 # Process with clean state - force no padding and truncation
-                print("🔍 Query right before embedding:", query_text)
-                q = query_text.lower()  # SigLIP2 trained on lowercased text
+                print("🔍 Query before preprocessing for SigLIP2:", query_text)
+                q = preprocess_query_siglip2_en(query_text)
+                print("🔍 Preprocessed query for SigLIP2:", q)
                 inputs = self.processor(
                     text=[q],
                     return_tensors="pt",

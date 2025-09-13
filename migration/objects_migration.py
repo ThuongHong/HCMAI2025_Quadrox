@@ -291,7 +291,7 @@ class ObjectMigrator:
 
             # Small delay between batches to reduce database load
             if batch_num < total_batches:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.1)
 
         # Print final statistics
         print(f"\n🎉 Object migration completed!")
