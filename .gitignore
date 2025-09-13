@@ -204,16 +204,13 @@ __marimo__/
 
 data/
 /.cursor
-/resources
-*.txt
-*.pt
-*.pdf
-*.npy
-*.jpg
-*.json
-/tests
-*.csv
-*.zip
-/models/siglip-so400m-patch14-384
-/models/Vintern-1B-v3_5
+/resources/*
+!/resources/!.gitkeep
+/models/*
+!/models/!.gitkeep
+/preprocesse/*
+!/preprocesse/.gitkeep
 /docs
+/tests
+/app/cache
+/output
