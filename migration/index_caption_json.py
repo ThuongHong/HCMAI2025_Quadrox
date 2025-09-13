@@ -288,6 +288,7 @@ def _build_bm25(records: List[Dict[str, Any]]):
 
 
 def _connect_milvus():
+    _log_step("_connect_milvus() start")
     try:
         from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
     except Exception as e:
@@ -318,6 +319,7 @@ def _connect_milvus():
 
 
 def _ensure_caption_collection(milvus, dim: int, metric: str = "COSINE"):
+    _log_step(f"_ensure_caption_collection(dim={dim}, metric={metric})")
     Collection = milvus["Collection"]
     FieldSchema = milvus["FieldSchema"]
     CollectionSchema = milvus["CollectionSchema"]
@@ -346,6 +348,7 @@ def _ensure_caption_collection(milvus, dim: int, metric: str = "COSINE"):
 
 def _load_text_encoder():
     """Load the same text encoder as the app (open_clip)."""
+    _log_step("_load_text_encoder() start")
     try:
         import open_clip
         import torch
