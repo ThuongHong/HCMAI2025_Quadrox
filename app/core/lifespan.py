@@ -19,6 +19,8 @@ from core.settings import MongoDBSettings, KeyFrameIndexMilvusSetting, AppSettin
 from models.keyframe import Keyframe
 from factory.factory import ServiceFactory
 from core.logger import SimpleLogger
+from service.caption_index import get_caption_index
+import threading, time
 
 mongo_client: AsyncIOMotorClient = None
 service_factory: ServiceFactory = None
@@ -81,8 +83,25 @@ async def lifespan(app: FastAPI):
         
         app.state.service_factory = service_factory
         app.state.mongo_client = mongo_client
-        
+
         logger.info("Application startup completed successfully")
+
+        # Background warmup for Caption Search (beta): load Parquet/BM25 and Milvus collection without blocking
+        try:
+            if getattr(appsetting, 'CAPTION_SEARCH_ENABLED', False):
+                def _warm_caption():
+                    t0 = time.time()
+                    try:
+                        idx = get_caption_index()
+                        logger.info("Caption index warmup started…")
+                        idx.warmup(load_milvus=True)
+                        logger.info(f"Caption index warmup finished in {time.time()-t0:.1f}s")
+                    except Exception as e:
+                        logger.warning(f"Caption index warmup skipped: {e}")
+
+                threading.Thread(target=_warm_caption, daemon=True).start()
+        except Exception:
+            pass
         
     except Exception as e:
         logger.error(f"Failed to start application: {e}")

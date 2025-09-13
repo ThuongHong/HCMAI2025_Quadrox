@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import os
 import pickle
 import warnings
+import time
 
 import pandas as pd
 
@@ -84,7 +85,9 @@ class CaptionIndex:
             self._milvus_coll = Collection(self.app.CAPTION_MILVUS_COLLECTION, using=alias)
             # Ensure collection is loaded for search to avoid "collection not loaded" errors
             try:
+                t0 = time.time()
                 self._milvus_coll.load()
+                logger.info(f"Milvus collection '{self.app.CAPTION_MILVUS_COLLECTION}' loaded in {time.time()-t0:.1f}s")
             except Exception:
                 pass
             self._milvus = connections
@@ -134,7 +137,9 @@ class CaptionIndex:
         try:
             # Best-effort load before search
             try:
+                t0 = time.time()
                 self._milvus_coll.load()
+                logger.info(f"Milvus collection ensured loaded in {time.time()-t0:.1f}s")
             except Exception:
                 pass
             res = self._milvus_coll.search(
@@ -157,7 +162,9 @@ class CaptionIndex:
             try:
                 if "collection not loaded" in str(e).lower():
                     try:
+                        t0 = time.time()
                         self._milvus_coll.load()
+                        logger.info(f"Milvus collection loaded on-demand in {time.time()-t0:.1f}s; retrying search")
                     except Exception:
                         pass
                     res = self._milvus_coll.search(
@@ -178,6 +185,31 @@ class CaptionIndex:
                 pass
             logger.warning(f"Milvus caption search failed: {e}")
             return []
+
+    # Warmup helpers
+    def warmup(self, load_milvus: bool = True):
+        """Load parquet/BM25 and optionally load Milvus collection; logs timings.
+        Call from app startup in a background thread.
+        """
+        t0 = time.time()
+        try:
+            self._ensure_meta()
+            logger.info(f"Caption meta loaded from {self.meta_path} in {time.time()-t0:.1f}s")
+        except Exception as e:
+            logger.warning(f"Caption meta load failed: {e}")
+        t1 = time.time()
+        try:
+            self._ensure_bm25()
+            logger.info(f"Caption BM25 loaded from {self.bm25_path} in {time.time()-t1:.1f}s")
+        except Exception as e:
+            logger.warning(f"Caption BM25 load failed: {e}")
+        if load_milvus:
+            t2 = time.time()
+            try:
+                self._ensure_milvus()
+                logger.info(f"Caption Milvus warmup done in {time.time()-t2:.1f}s")
+            except Exception as e:
+                logger.warning(f"Caption Milvus warmup skipped: {e}")
 
     def _milvus_search_params(self) -> Dict[str, Any]:
         # Reuse milvus metric from existing settings, with reasonable defaults
