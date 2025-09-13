@@ -23,6 +23,24 @@ st.set_page_config(
 # Force refresh cache
 st.write(f"<!-- Cache buster: {time.time()} -->", unsafe_allow_html=True)
 
+# Check working directory and set up path prefix
+current_cwd = os.getcwd()
+path_prefix = ""
+
+if current_cwd.endswith('gui') or current_cwd.endswith('gui\\'):
+    # If running from gui folder, need to go up one level for resources
+    path_prefix = "../"
+    print(f"🔧 Running from gui folder, using path prefix: {path_prefix}")
+else:
+    print(f"🔧 Running from project root: {current_cwd}")
+
+# Verify resources directory exists
+resources_path = f"{path_prefix}resources"
+if not os.path.exists(resources_path):
+    st.error("❌ Resources directory not found. Please run from project root or gui/ folder.")
+    st.info(f"Looking for: {os.path.abspath(resources_path)}")
+    st.stop()
+
 # Helper Functions
 
 
@@ -1025,7 +1043,9 @@ st.markdown("""
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'api_base_url' not in st.session_state:
-    st.session_state.api_base_url = "http://localhost:8000"
+    st.session_state.api_base_url = "http://localhost:8000"  # Main app with OCR integrated
+if 'ocr_mode' not in st.session_state:
+    st.session_state.ocr_mode = "local"  # local or api
 if 'csv_filename' not in st.session_state:
     st.session_state.csv_filename = f"query_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
@@ -1067,7 +1087,7 @@ with st.expander("⚙️ API Configuration", expanded=False):
 
 # Main search interface
 st.markdown("### 🔍 Search Method")
-search_tab1, search_tab2 = st.tabs(["📝 Text Search", "🖼️ Image Search"])
+search_tab1, search_tab2, search_tab3 = st.tabs(["📝 Text Search", "🖼️ Image Search", "📄 OCR Search"])
 
 # TEXT SEARCH TAB
 with search_tab1:
@@ -1233,6 +1253,80 @@ with search_tab2:
         - Upload an image file
         - The system will find keyframes that are visually similar
         - Supported formats: PNG, JPG, JPEG, BMP, TIFF, WebP
+        """)
+
+# OCR SEARCH TAB
+with search_tab3:
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        # OCR Search query
+        ocr_query = st.text_input(
+            "📄 OCR Search Query",
+            placeholder="Enter text to search in OCR results (e.g., 'giây', 'HD', 'time')",
+            help="Search for text that appears in video keyframes using OCR data",
+            key="ocr_query"
+        )
+
+        # OCR Search parameters
+        col_param1, col_param2 = st.columns(2)
+        with col_param1:
+            ocr_top_k = st.slider("📊 Max Results", min_value=1,
+                                  max_value=500, value=50, key="ocr_top_k")
+        with col_param2:
+            # Search mode selection (AND/OR)
+            ocr_search_mode = st.selectbox(
+                "🔍 Search Mode",
+                options=["Simple", "AND", "OR", "Phrase"],
+                help="Choose how to combine multiple search terms",
+                key="ocr_search_mode"
+            )
+        
+        # Video filters for OCR
+        st.markdown("**🎬 Video Filters (Optional)**")
+        ocr_video_filters = st.text_input(
+            "Video IDs to filter",
+            placeholder="Enter video IDs separated by commas (e.g., L01_V001, L02_V005)",
+            help="Limit search to specific videos only",
+            key="ocr_video_filters"
+        )
+
+    with col2:
+        st.markdown("### 📄 OCR Search Info")
+        
+        # OCR Mode Selector
+        st.markdown("**⚙️ OCR Search Mode**")
+        ocr_mode = st.radio(
+            "Choose OCR search method:",
+            options=["local", "api"],
+            format_func=lambda x: {
+                "local": "🏠 Local Search (Direct DB)",
+                "api": "🌐 API Search (HTTP)"
+            }[x],
+            help="Local: Direct database access, faster but requires database file. API: Uses OCR server.",
+            key="ocr_mode_selector"
+        )
+        
+        # Update session state
+        if ocr_mode != st.session_state.ocr_mode:
+            st.session_state.ocr_mode = ocr_mode
+        
+        # Show current mode status
+        if st.session_state.ocr_mode == "local":
+            st.success("🏠 Using local OCR database")
+        else:
+            st.info(f"🌐 Using API: `{st.session_state.api_base_url}`")
+        
+        st.info("""
+        **How it works:**
+        - Search through text detected in video keyframes
+        - Uses OCR (Optical Character Recognition) data
+        
+        **Search Modes:**
+        - **Simple**: Basic text search
+        - **AND**: All words must appear: `person AND walking`
+        - **OR**: Any word can appear: `person OR people`
+        - **Phrase**: Exact phrase search: `"exact phrase"`
         """)
 
 # Metadata Filter Section (Independent)
@@ -1906,7 +2000,7 @@ enable_qexp = st.checkbox(
 )
 
 # Search button and logic
-col_search1, col_search2 = st.columns(2)
+col_search1, col_search2, col_search3 = st.columns(3)
 
 with col_search1:
     if st.button("🚀 Text Search", use_container_width=True):
@@ -2249,6 +2343,117 @@ with col_search2:
                 except Exception as e:
                     st.error(f"An error occurred: {str(e)}")
 
+with col_search3:
+    if st.button("📄 OCR Search", use_container_width=True):
+        if not ocr_query.strip():
+            st.error("Please enter an OCR search query")
+        elif len(ocr_query) > 1000:
+            st.error("Query too long. Please keep it under 1000 characters.")
+        else:
+            with st.spinner("🔍 Searching through OCR text..."):
+                try:
+                    # Parse video filters
+                    video_filter_list = []
+                    if ocr_video_filters.strip():
+                        video_filter_list = [v.strip() for v in ocr_video_filters.split(',') if v.strip()]
+                    
+                    # Build query based on search mode
+                    processed_query = ocr_query
+                    if ocr_search_mode == "AND" and " " in ocr_query:
+                        words = ocr_query.split()
+                        processed_query = " AND ".join(words)
+                    elif ocr_search_mode == "OR" and " " in ocr_query:
+                        words = ocr_query.split()
+                        processed_query = " OR ".join(words)
+                    elif ocr_search_mode == "Phrase":
+                        processed_query = f'"{ocr_query}"'
+                    
+                    # Choose search method based on mode
+                    if st.session_state.ocr_mode == "local":
+                        # LOCAL OCR SEARCH
+                        from gui_ocr_search import GuiOCRSearch
+                        
+                        ocr_service = GuiOCRSearch()
+                        ocr_results = ocr_service.search_text(
+                            query=processed_query,
+                            limit=ocr_top_k,
+                            min_confidence=0.0,
+                            video_filters=video_filter_list if video_filter_list else None
+                        )
+                        
+                    else:
+                        # API OCR SEARCH
+                        import requests
+                        
+                        payload = {
+                            "query": processed_query,
+                            "limit": ocr_top_k,
+                            "min_confidence": 0.0,
+                            "video_filters": video_filter_list if video_filter_list else None,
+                            "include_ocr_details": True,
+                            "include_video_metadata": True  # Add this to get video URLs
+                        }
+                        
+                        endpoint = f"{st.session_state.api_base_url}/api/v1/ocr/search"
+                        
+                        response = requests.post(
+                            endpoint,
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        
+                        if response.status_code == 200:
+                            ocr_results = response.json()
+                        else:
+                            st.error(f"API search failed: {response.status_code} - {response.text}")
+                            ocr_results = None
+                    
+                    # Process results if successful
+                    if ocr_results and ocr_results.get('results'):
+                        # Convert OCR results to keyframe search format for compatibility
+                        converted_results = []
+                        for ocr_result in ocr_results['results']:
+                            video_id = ocr_result['video_id']
+                            frame_number = str(ocr_result['frame_number'])
+                            
+                            # Parse group from video_id (e.g., L01_V001 -> L01)
+                            group = video_id.split('_')[0] if '_' in video_id else video_id[:3]
+                            
+                            # Path with prefix for GUI folder
+                            keyframe_path = f"{path_prefix}resources/keyframes/{group}/{video_id}/{frame_number.zfill(3)}.jpg"
+                            
+                            converted_result = {
+                                "path": keyframe_path,
+                                "score": ocr_result.get('confidence', 1.0),
+                                "video_id": video_id,
+                                "frame_id": ocr_result['frame_id'],
+                                "ocr_text": ocr_result['ocr_text'],
+                                "ocr_details": ocr_result.get('ocr_details', []),
+                                # Add video metadata if available
+                                "watch_url": ocr_result.get('watch_url'),
+                                "title": ocr_result.get('title'),
+                                "author": ocr_result.get('author'),
+                                "description": ocr_result.get('description'),
+                                "thumbnail_url": ocr_result.get('thumbnail_url'),
+                                "publish_date": ocr_result.get('publish_date'),
+                                "length": ocr_result.get('length')
+                            }
+                            converted_results.append(converted_result)
+                        
+                        # Store in session state
+                        st.session_state.search_results = converted_results
+                        st.session_state.search_query = f"OCR ({st.session_state.ocr_mode}): {ocr_query}"
+                        st.session_state.last_search_rerank_enabled = False
+                        
+                        st.success(f"Found {len(converted_results)} OCR results using {st.session_state.ocr_mode} search")
+                        st.rerun()
+                    else:
+                        st.warning("No OCR results found")
+                        
+                except Exception as e:
+                    st.error(f"OCR search error: {str(e)}")
+                    print(f"OCR search failed: {e}")  # Use print instead of logger
+
 # Display results
 if st.session_state.search_results:
     st.markdown("---")
@@ -2416,8 +2621,26 @@ if st.session_state.search_results:
                                 st.error("❌ Failed to add to CSV")
 
                     # Show thumbnail image
-                    st.image(result['path'], width=300,
-                             caption=f"Keyframe {i+1}")
+                    try:
+                        # Adjust path based on working directory
+                        image_path = result['path']
+                        if path_prefix and not os.path.isabs(image_path):
+                            adjusted_path = f"{path_prefix}{image_path}"
+                        else:
+                            adjusted_path = image_path
+                        
+                        # Use adjusted path
+                        st.image(adjusted_path, width=300, caption=f"Keyframe {i+1}")
+                    except Exception as img_err:
+                        # If adjusted path fails, try original path
+                        try:
+                            st.image(result['path'], width=300, caption=f"Keyframe {i+1}")
+                        except Exception as e2:
+                            st.error(f"❌ Image load failed")
+                            st.text(f"Tried paths:")
+                            st.text(f"  1. {path_prefix}{result['path']} (adjusted)")
+                            st.text(f"  2. {result['path']} (original)")
+                            st.text(f"Working dir: {os.getcwd()}")
 
                 except Exception as e:
                     st.markdown(f"""
@@ -2548,6 +2771,18 @@ if st.session_state.search_results:
                             objects_str += f" (+{len(objects)-5} more)"
                         metadata_parts.append(
                             f"<strong>🎯 Detected Objects:</strong> {objects_str}")
+
+                # NEW: Show OCR text if available (for OCR search results)
+                if 'ocr_text' in result and result['ocr_text']:
+                    ocr_text = result['ocr_text']
+                    # Truncate long OCR text for display
+                    if len(ocr_text) > 150:
+                        display_ocr = ocr_text[:147] + "..."
+                    else:
+                        display_ocr = ocr_text
+                    
+                    metadata_parts.append(
+                        f"<strong>📄 OCR Text:</strong> <em>'{display_ocr}'</em>")
 
                 if metadata_parts:
                     metadata_html = f'<div class="metadata-section">{"<br>".join(metadata_parts)}</div>'

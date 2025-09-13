@@ -232,3 +232,5 @@ AGENTS.md
 .kiro/steering/byterover-rules.md
 .qoder/rules/byterover-rules.md
 .augment/rules/byterover-rules.md
+# OCR Database files
+ocr2_search.db

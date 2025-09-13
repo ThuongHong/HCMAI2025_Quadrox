@@ -1,6 +1,6 @@
 from core.logger import SimpleLogger
 from core.lifespan import lifespan
-from router import keyframe_api, agent_api
+from router import keyframe_api, agent_api, ocr_search_api
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.responses import JSONResponse
@@ -76,6 +76,7 @@ app.add_middleware(
 
 app.include_router(keyframe_api.router, prefix="/api/v1")
 app.include_router(agent_api.router, prefix='/api/v1')
+app.include_router(ocr_search_api.router)
 
 
 @app.get("/", tags=["root"])
@@ -84,23 +85,41 @@ async def root():
     Root endpoint with API information.
     """
     return {
-        "message": "Keyframe Search API",
+        "message": "Keyframe Search API with OCR",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/api/v1/keyframe/health",
-        "search": "/api/v1/keyframe/search"
+        "health": "/health",
+        "keyframe_search": "/api/v1/keyframe/search",
+        "ocr_search": "/api/v1/ocr/search",
+        "ocr_stats": "/api/v1/ocr/stats",
+        "ocr_health": "/api/v1/ocr/health"
     }
 
 
 @app.get("/health", tags=["health"])
 async def health():
     """
-    Simple health check endpoint.
+    Combined health check endpoint.
     """
-    return {
+    health_status = {
         "status": "healthy",
-        "service": "keyframe-search-api"
+        "service": "keyframe-search-api-with-ocr",
+        "keyframe_search": "available",
+        "ocr_search": "checking..."
     }
+    
+    # Check OCR service
+    try:
+        from app.service.ocr_search_service import OCRSearchService
+        ocr_service = OCRSearchService()
+        ocr_stats = ocr_service.get_database_statistics()
+        health_status["ocr_search"] = "available"
+        health_status["ocr_records"] = ocr_stats["total_records"]
+    except Exception as e:
+        health_status["ocr_search"] = f"unavailable: {str(e)}"
+        health_status["status"] = "partial"
+    
+    return health_status
 
 
 # @app.exception_handler(Exception)
