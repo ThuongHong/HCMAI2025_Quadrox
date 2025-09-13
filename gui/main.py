@@ -266,11 +266,29 @@ def export_all_results_to_csv(filename, results_list):
         # Prepare simple data
         all_data = []
         for result in results_list:
-            # Extract frame info from path (e.g., L21_V001 from "L21/L21_V001/001.jpg")
-            video_id, n = get_frame_info_from_keyframe_path(
-                result.get('path', ''))
+            # Handle different result formats (with/without rerank)
+            path = result.get('path', '')
+            video_id = None
+            n = None
+            
+            # Method 1: Try to get from path (most reliable)
+            if path:
+                video_id, n = get_frame_info_from_keyframe_path(path)
+            
+            # Method 2: Try to get from direct fields (for rerank results)
+            if not video_id:
+                video_id = result.get('video_id', '')
+            if n is None:
+                # Try different possible field names for frame number
+                n = result.get('frame_idx', result.get('n', result.get('frame_number', None)))
+                # Convert to int if it's a string
+                if n is not None:
+                    try:
+                        n = int(n)
+                    except (ValueError, TypeError):
+                        n = None
 
-            if video_id and n:
+            if video_id and n is not None:
                 # Get real frame_idx from CSV mapping
                 real_frame_idx = get_real_frame_idx_from_n(video_id, n)
                 if real_frame_idx is not None:
@@ -282,6 +300,17 @@ def export_all_results_to_csv(filename, results_list):
                         'frame_idx': real_frame_idx,  # Use real frame_idx from mapping
                     }
                     all_data.append(row_data)
+                else:
+                    # If real_frame_idx mapping fails, use original n
+                    mapped_video_id = apply_video_id_mapping(video_id)
+                    row_data = {
+                        'video_id': mapped_video_id,
+                        'frame_idx': n,  # Fallback to original frame number
+                    }
+                    all_data.append(row_data)
+            else:
+                # Debug info for troubleshooting
+                st.warning(f"⚠️ Could not extract video_id and frame info from result: {result}")
 
         # Create DataFrame and save without header with UTF-8 encoding
         df = pd.DataFrame(all_data)
@@ -290,6 +319,7 @@ def export_all_results_to_csv(filename, results_list):
         return True, len(all_data)
     except Exception as e:
         st.error(f"Error exporting to CSV: {e}")
+        st.error(f"Debug - Results sample: {results_list[:1] if results_list else 'Empty'}")
         return False, 0
 
 
@@ -517,16 +547,32 @@ def show_mpc_video(pts_time, result_data, result_index):
     try:
         # Initialize session state for frame navigation
         if f'current_frame_{result_index}' not in st.session_state:
-            # Get initial frame index from result data
-            video_id, frame_idx = get_frame_info_from_keyframe_path(
+            # Get initial frame index from result data - handle different formats
+            parsed_video_id, parsed_frame_idx = get_frame_info_from_keyframe_path(
                 result_data.get('path', ''))
-            st.session_state[f'current_frame_{result_index}'] = frame_idx if frame_idx else 1
+            
+            # Try to get frame_idx from different sources
+            frame_idx = parsed_frame_idx
+            if frame_idx is None:
+                frame_idx = result_data.get('frame_idx', result_data.get('n', result_data.get('frame_number', 1)))
+                # Convert to int if it's a string
+                if frame_idx is not None:
+                    try:
+                        frame_idx = int(frame_idx)
+                    except (ValueError, TypeError):
+                        frame_idx = 1
+                else:
+                    frame_idx = 1
+                    
+            st.session_state[f'current_frame_{result_index}'] = max(frame_idx, 1)
 
-        # Get video_id from path parsing (e.g., L21_V001 from "L21/L21_V001/001.jpg")
+        # Get video_id from multiple sources - handle different formats
         parsed_video_id, parsed_frame_idx = get_frame_info_from_keyframe_path(
             result_data.get('path', ''))
-        video_id = parsed_video_id if parsed_video_id else result_data.get(
-            'video_id', 'Unknown')
+        
+        # Method 1: Parsed from path (most reliable)
+        # Method 2: Direct from result data (for rerank results)
+        video_id = parsed_video_id if parsed_video_id else result_data.get('video_id', 'Unknown')
 
         current_frame = st.session_state[f'current_frame_{result_index}']
         watch_url = result_data.get('watch_url', 'Not available')
@@ -593,32 +639,39 @@ def show_mpc_video(pts_time, result_data, result_index):
         )
 
         # Export button
+        # Export button
         if st.button("📤 Add Frame to CSV", help=f"Add frame {export_frame} to CSV file", key=f"export_frame_{result_index}"):
-            # Get real frame_idx from CSV mapping (n -> frame_idx)
-            real_frame_idx = get_real_frame_idx_from_n(video_id, export_frame)
-            if real_frame_idx is None:
-                real_frame_idx = export_frame  # Fallback to input value
-
-            # Prepare frame data for CSV: video_id, real_frame_idx, vqa_answer (if provided)
-            frame_data = {
-                'video_id': video_id,  # L21_V001 from path parsing
-                'frame_idx': real_frame_idx,  # Real frame_idx from CSV mapping
-            }
-
-            # Add VQA answer if provided
-            if vqa_answer and vqa_answer.strip():
-                frame_data['vqa_answer'] = vqa_answer.strip()
-
-            success = append_to_csv(csv_filename_frame, frame_data)
-            if success:
-                if vqa_answer and vqa_answer.strip():
-                    st.success(
-                        f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}, {vqa_answer.strip()}")
-                else:
-                    st.success(
-                        f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}")
+            # Validate video_id
+            if video_id == 'Unknown' or not video_id:
+                st.error("❌ Cannot export: video_id is unknown. This may be due to invalid result format.")
+                st.info("💡 Try using 'Export All to CSV' from the main results page instead.")
             else:
-                st.error("❌ Failed to export frame data")
+                # Get real frame_idx from CSV mapping (n -> frame_idx)
+                real_frame_idx = get_real_frame_idx_from_n(video_id, export_frame)
+                if real_frame_idx is None:
+                    real_frame_idx = export_frame  # Fallback to input value
+
+                # Prepare frame data for CSV: video_id, real_frame_idx, vqa_answer (if provided)
+                frame_data = {
+                    'video_id': video_id,  # L21_V001 from path parsing
+                    'frame_idx': real_frame_idx,  # Real frame_idx from CSV mapping
+                    'real_frame_idx': real_frame_idx,  # Ensure both fields are available
+                }
+
+                # Add VQA answer if provided
+                if vqa_answer and vqa_answer.strip():
+                    frame_data['vqa_answer'] = vqa_answer.strip()
+
+                success = append_to_csv(csv_filename_frame, frame_data)
+                if success:
+                    if vqa_answer and vqa_answer.strip():
+                        st.success(
+                            f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}, {vqa_answer.strip()}")
+                    else:
+                        st.success(
+                            f"✅ Frame {export_frame} (real frame_idx: {real_frame_idx}) added to {csv_filename_frame} as {video_id}, {real_frame_idx}")
+                else:
+                    st.error("❌ Failed to export frame data")
 
         # MPC-HC Quick Launch
         st.markdown("---")
@@ -2562,9 +2615,29 @@ if st.session_state.search_results:
 
     # Display results in a grid
     for i, result in enumerate(sorted_results):
-        # Extract frame info for each result
-        video_id, frame_idx = get_frame_info_from_keyframe_path(
-            result.get('path', ''))
+        # Extract frame info for each result - handle different formats
+        path = result.get('path', '')
+        video_id = None
+        frame_idx = None
+        
+        # Method 1: Try to get from path (most reliable)
+        if path:
+            video_id, frame_idx = get_frame_info_from_keyframe_path(path)
+        
+        # Method 2: Try to get from direct fields (for rerank results)
+        if not video_id:
+            video_id = result.get('video_id', '')
+        if frame_idx is None:
+            # Try different possible field names for frame number
+            frame_idx = result.get('frame_idx', result.get('n', result.get('frame_number', None)))
+            # Convert to int if it's a string
+            if frame_idx is not None:
+                try:
+                    frame_idx = int(frame_idx)
+                except (ValueError, TypeError):
+                    frame_idx = None
+        
+        # Get pts_time if we have valid video_id and frame_idx
         pts_time = None
         if video_id and frame_idx is not None:
             pts_time = get_pts_time_from_n(video_id, frame_idx)
@@ -2572,12 +2645,17 @@ if st.session_state.search_results:
         # Add extracted info to result for display and CSV export
         result['frame_idx'] = frame_idx  # n (filename number like 1, 2, 3...)
         result['pts_time'] = pts_time
+        result['video_id'] = video_id  # Ensure video_id is in result
 
         # Get real frame_idx for CSV export
+        real_frame_idx = None
         if video_id and frame_idx is not None:
             real_frame_idx = get_real_frame_idx_from_n(video_id, frame_idx)
             result['real_frame_idx'] = real_frame_idx
         else:
+            # If extraction fails, try to use what's already in the result
+            real_frame_idx = result.get('real_frame_idx', frame_idx)
+            result['real_frame_idx'] = real_frame_idx
             result['real_frame_idx'] = None
 
         with st.container():
