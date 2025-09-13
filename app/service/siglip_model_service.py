@@ -1,31 +1,30 @@
 import torch
 import numpy as np
 from PIL import Image
-from transformers import SiglipModel, SiglipProcessor
+from transformers import AutoModel, AutoProcessor
 from typing import Union
-import os
 
 
 class SigLIPModelService:
     def __init__(self, model_path: str):
         """
-        Initialize SigLIP model service
+        Initialize SigLIP2 model service
         Args:
-            model_path: Path to the SigLIP model directory
+            model_path: Path to the SigLIP2 model directory
         """
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model_path = model_path
         
-        # Load SigLIP model and processor
-        self.processor = SiglipProcessor.from_pretrained(model_path)
-        self.model = SiglipModel.from_pretrained(model_path).to(self.device)
+        # Load SigLIP2 model and processor
+        self.processor = AutoProcessor.from_pretrained(model_path)
+        self.model = AutoModel.from_pretrained(model_path).to(self.device)
         self.model.eval()
         
-        print(f"SigLIP model loaded from {model_path} on {self.device}")
+        print(f"SigLIP2 model loaded from {model_path} on {self.device}")
     
     def embedding(self, query_text: str) -> np.ndarray:
         """
-        Generate text embedding using SigLIP
+        Generate text embedding using SigLIP2
         Args:
             query_text: Input text query
         Returns:
@@ -38,14 +37,16 @@ class SigLIPModelService:
             
             with torch.no_grad():
                 # Process with clean state - force no padding and truncation
+                print("🔍 Query right before embedding:", query_text)
+                q = query_text.lower()  # SigLIP2 trained on lowercased text
                 inputs = self.processor(
-                    text=[query_text], 
-                    return_tensors="pt", 
-                    padding=False,  # Disable padding to avoid token accumulation
-                    truncation=True,  # Enable truncation for safety
-                    max_length=64     # SigLIP max sequence length
+                    text=[q],
+                    return_tensors="pt",
+                    padding="max_length",  
+                    truncation=True,
+                    max_length=64
                 )
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}      
                 
                 # Debug log
                 seq_len = inputs['input_ids'].shape[1]
@@ -61,7 +62,7 @@ class SigLIPModelService:
                 return text_features.cpu().detach().numpy().astype(np.float32)
                 
         except Exception as e:
-            print(f"❌ SigLIP embedding error: {e}")
+            print(f"❌ SigLIP2 embedding error: {e}")
             # Clear any partial state on error
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -69,7 +70,7 @@ class SigLIPModelService:
     
     def image_embedding(self, image: Union[Image.Image, str]) -> np.ndarray:
         """
-        Generate image embedding using SigLIP
+        Generate image embedding using SigLIP2
         Args:
             image: PIL Image or path to image
         Returns:
@@ -97,7 +98,7 @@ class SigLIPModelService:
                 return image_features.cpu().detach().numpy().astype(np.float32)
                 
         except Exception as e:
-            print(f"❌ SigLIP image embedding error: {e}")
+            print(f"❌ SigLIP2 image embedding error: {e}")
             # Clear any partial state on error
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -105,7 +106,8 @@ class SigLIPModelService:
     
     def get_embedding_dim(self) -> int:
         """
-        Get the embedding dimension of the SigLIP model
+        Get the embedding dimension of the SigLIP2 model
         """
-        # For SigLIP, the embedding dimension is in the text/vision config
-        return self.model.config.text_config.hidden_size
+        # For SigLIP2, the embedding dimension is in the text/vision config
+        return getattr(self.model.config.text_config, "projection_size",
+                        self.model.config.text_config.hidden_size)

@@ -63,25 +63,25 @@ class QueryController:
         if not isinstance(text, str) or not text:
             return text
         out = text
-        # Add "phrase " before ASCII double-quoted spans: "..."
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )("[^"]+")',
-            r'phrase \g<0>',
-            out,
-        )
-        # Add "phrase " before curly-quoted spans: “...”, ”...”
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])',
-            r'phrase \g<0>',
-            out,
-        )
-        # Add "phrase " before ASCII single-quoted spans: '\'...\''
-        # Avoid contractions/possessives by requiring no word-char immediately before the quote
-        out = re.sub(
-            r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(?<!\w)(\'[^\']+\')',
-            r'phrase \g<0>',
-            out,
-        )
+        # # Add "phrase " before ASCII double-quoted spans: "..."
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )("[^"]+")',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
+        # # Add "phrase " before curly-quoted spans: “...”, ”...”
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )([\u201C][^\u201D]+[\u201D])',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
+        # # Add "phrase " before ASCII single-quoted spans: '\'...\''
+        # # Avoid contractions/possessives by requiring no word-char immediately before the quote
+        # out = re.sub(
+        #     r'(?<!phrase )(?<!text )(?<!quote )(?<!slogan )(?<!caption )(?<!reading )(?<!\w)(\'[^\']+\')',
+        #     r'phrase \g<0>',
+        #     out,
+        # )
         return out
 
     def _clip_limit_text(self, text: str, max_tokens: int = 75) -> str:
