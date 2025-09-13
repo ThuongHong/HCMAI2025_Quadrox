@@ -74,10 +74,8 @@ python migration/metadata_migration.py --folder_path resources/metadata
 python migration/objects_migration.py --folder_path resources/objects
 ```
 
-. **Download model**
-
-
-#### Model chính (Vintern - cần authentication):
+7. **Download model**
+#### Model chính (SigLIP2 - cần authentication):
 ```bash
 # Đăng nhập HuggingFace CLI
 huggingface-cli login --token <token>
@@ -126,7 +124,7 @@ python tools/precompute_captions.py \
     --batch_size 20
 ``` -->
 
-7. **Run the applications**
+8. **Run the applications**
 
 Open two terminal tabs:
 
