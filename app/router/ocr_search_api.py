@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import logging
 
-from app.service.ocr_search_service import OCRSearchService, OCRSearchResult
+from service.ocr_search_service import OCRSearchService, OCRSearchResult
 
 logger = logging.getLogger(__name__)
 
