@@ -89,20 +89,8 @@ class SigLIPModelService:
         # Load SigLIP2 model and processor
         # 1) bật fast processor nếu có; an toàn vì sẽ fallback khi không hỗ trợ
         self.processor = AutoProcessor.from_pretrained(self.model_path, use_fast=True)
+        self.model = AutoModel.from_pretrained(self.model_path).to(self.device)
 
-        # 2) dtype + SDPA: tiết kiệm VRAM trên GPU; trên CPU sẽ tự về float32
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        try:
-            self.model = AutoModel.from_pretrained(
-                self.model_path,
-                torch_dtype=dtype,
-                attn_implementation="sdpa",  # PyTorch SDPA: mem-efficient attention
-            ).to(self.device)
-        except TypeError:
-            # transformers cũ không có tham số attn_implementation
-            self.model = AutoModel.from_pretrained(
-                self.model_path, torch_dtype=dtype
-            ).to(self.device)
 
         self.model.eval()
         
@@ -134,13 +122,8 @@ class SigLIPModelService:
                     max_length=64
                 )
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}      
-                
-                # Mixed precision
-                if torch.cuda.is_available():
-                    with torch.cuda.amp.autocast(dtype=torch.float16):
-                        text_features = self.model.get_text_features(**inputs)
-                else:
-                    text_features = self.model.get_text_features(**inputs)
+
+                text_features = self.model.get_text_features(**inputs)
                 
                 text_features = torch.nn.functional.normalize(text_features.float(), dim=-1)
                 
